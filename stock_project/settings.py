@@ -6,20 +6,15 @@ from pathlib import Path
 import os
 import dj_database_url
 # Whitenoise, production ortamında statik dosyaları sunmak için önerilir.
-# pip install whitenoise
-# from whitenoise.middleware import WhiteNoiseMiddleware # Eğer MIDDLEWARE'e eklenirse
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 # --- 1. GÜVENLİK VE ANAHTAR YÖNETİMİ (ZORUNLU) ---
-# SECRET_KEY'i koddan çıkarıp, Render'da tanımlayacağınız ortam değişkeninden okuyun.
 SECRET_KEY = os.environ.get('SECRET_KEY')
 if not SECRET_KEY:
     # Bu kontrol, anahtarın ayarlanmadığı durumlarda uygulamanın başlamasını engeller.
-    # Yerel geliştirme için, bu satırı geçici olarak kapatıp sabit anahtar kullanabilirsiniz.
-    # raise ValueError("SECRET_KEY ortam değişkeni ayarlanmadı.")
-    pass # Yerel testler için geçici olarak ValueError'ı kaldırdık
+    pass 
 
 # DEBUG'ı ortam değişkeninden oku. DEBUG_VALUE='True' ise DEBUG=True olur.
 DEBUG = os.environ.get('DEBUG_VALUE') == 'True'
@@ -27,6 +22,13 @@ DEBUG = os.environ.get('DEBUG_VALUE') == 'True'
 # İzin verilen sunucular, Render domainleri ve özel domain'ler için
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') 
 ALLOWED_HOSTS.append('.render.com') 
+
+# === 🚨 400 Bad Request Hatası Çözümü: Render Host Adını Ekleme ===
+# Render'dan gelen tam host adını alıp ALLOWED_HOSTS listesine ekler.
+# Bu, https://stok-35vx.onrender.com gibi adreslerin tanınmasını sağlar.
+RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
+if RENDER_EXTERNAL_HOSTNAME:
+    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME) 
 
 # --- 2. UYGULAMA TANIMLARI ---
 
@@ -43,7 +45,8 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    # 'whitenoise.middleware.WhiteNoiseMiddleware', # Statik dosyalar için (Opsiyonel ama önerilir)
+    # === 🚨 DÜZELTME: Whitenoise Aktif Edildi (Statik Dosyalar (CSS/JS) İçin) ===
+    'whitenoise.middleware.WhiteNoiseMiddleware', 
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -52,14 +55,11 @@ MIDDLEWARE = [
 ]
 
 # --- RENDER GÜVENLİK AYARLARI ---
-# HTTPS'i zorunlu kıl (Render'da zorunludur)
 SECURE_SSL_REDIRECT = True
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-CSRF_TRUSTED_ORIGINS = ['https://*.render.com'] # Render domainlerini güvenilir yap
+CSRF_TRUSTED_ORIGINS = ['https://*.render.com'] 
 
 ROOT_URLCONF = 'stock_project.urls'
-
-# ... (TEMPLATES ve WSGI_APPLICATION kodları aynı kalır) ...
 
 TEMPLATES = [
     {
@@ -80,16 +80,14 @@ WSGI_APPLICATION = 'stock_project.wsgi.application'
 
 
 # --- 3. VERİTABANI AYARLARI (RENDER İÇİN POSTGRESQL) ---
-# Render'ın sağladığı DATABASE_URL ortam değişkenini kullanır.
 try:
     DATABASES = {
         'default': dj_database_url.config(
             default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600 # Kalıcı bağlantılar (performans için)
+            conn_max_age=600 
         )
     }
 except Exception:
-    # DATABASE_URL ortam değişkeni ayarlanmadıysa veya hata oluştuysa yerel SQLite kullan
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.sqlite3',
@@ -103,18 +101,10 @@ except Exception:
 
 # --- 4. STATİK DOSYALAR (PRODUCTION İÇİN ZORUNLU) ---
 
-# Statik dosyaların URL öneki
 STATIC_URL = '/static/'
-
-# Statik dosyaların toplanacağı dizin (collectstatic komutu için)
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-# Uygulamaların içindeki static klasörlerinin yanı sıra varsa elle belirlenmiş
-# statik dosya klasörlerini dahil et.
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
 
-
-# Default primary key field type
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
