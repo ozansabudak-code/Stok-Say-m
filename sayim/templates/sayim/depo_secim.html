@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Depo Seçimi</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 400px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #007bff; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+        select, button { width: 100%; padding: 10px; margin-top: 15px; border-radius: 4px; }
+        button { background-color: #4CAF50; color: white; border: none; cursor: pointer; font-size: 1.1em; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Sayım Deposu Seçimi</h1>
+        <form id="depo-form">
+            {% csrf_token %}
+            <label for="depo-select">Lütfen Sayım Yapılacak Depoyu Seçin:</label>
+            <select id="depo-select" required>
+                {% for lokasyon in lokasyonlar %}
+                    <option value="{{ lokasyon }}">{{ lokasyon }}</option>
+                {% endfor %}
+            </select>
+
+            <button type="submit">Sayımı Başlat</button>
+        </form>
+    </div>
+
+<script>
+    document.getElementById('depo-form').addEventListener('submit', function(e) {
+        e.preventDefault();
+        const depoKodu = document.getElementById('depo-select').value;
+        const sayimEmriId = {{ sayim_emri_id }};
+        
+        // KRİTİK DÜZELTME: Doğrudan Sayım Girişi'ne gitmek yerine,
+        // önce Personel Login sayfasına yönlendiriyoruz.
+        window.location.href = `/login-personel/${sayimEmriId}/${depoKodu}/`;
+    });
+</script>
+</body>
+</html>

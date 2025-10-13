@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personel Girişi</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f0f2f5; }
+        .container { max-width: 400px; margin: auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #28a745; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+        input[type="text"] { width: 100%; padding: 12px; margin-top: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1.1em; }
+        button { background-color: #28a745; color: white; padding: 12px 20px; border: none; border-radius: 4px; cursor: pointer; font-size: 1.1em; width: 100%; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Personel Girişi</h1>
+        <p>Emir: {{ sayim_emri_id }} | Depo: {{ depo_kodu }}</p>
+        
+        <form method="POST" action="{% url 'set_personel_session' %}">
+            {% csrf_token %}
+            <label for="personel_adi">Personel Adınız:</label>
+            <input type="text" id="personel_adi" name="personel_adi" required autofocus>
+            
+            <input type="hidden" name="sayim_emri_id" value="{{ sayim_emri_id }}">
+            <input type="hidden" name="depo_kodu" value="{{ depo_kodu }}">
+
+            <button type="submit">Oturumu Başlat</button>
+        </form>
+    </div>
+</body>
+</html>

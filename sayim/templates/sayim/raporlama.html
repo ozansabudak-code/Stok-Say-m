@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Mutabakat Raporu (Emir {{ sayim_emri.pk }})</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 1300px; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { color: #8B0000; border-bottom: 3px solid #f0f0f0; padding-bottom: 10px; margin-bottom: 20px; }
+        .analiz-container { margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #ddd; }
+        .analiz-btn { background-color: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; margin-right: 10px; display: inline-block; font-size: 0.95em; }
+        .fark-btn { background-color: darkgreen; }
+        .excel-btn { background-color: orange; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.85em; }
+        th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: right; }
+        th { background-color: #f2f2f2; text-align: center; }
+        .text-left { text-align: left; }
+        .fark_var { background-color: #ffcccc; color: #cc0000; font-weight: bold; }
+        .hic_sayilmadi { background-color: #fff0b3; color: #e69100; }
+        .tamam { background-color: #e6ffe6; }
+
+        .onay-btn { background-color: darkred; color: white; padding: 15px 30px; border: none; border-radius: 5px; cursor: pointer; font-size: 1.1em; display: block; width: 100%; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Mutabakat Raporu (Emir ID: {{ sayim_emri.pk }} - {{ sayim_emri.ad }})</h1>
+
+        <div class="analiz-container">
+            <a href="{% url 'analiz_performans' pk=sayim_emri.pk %}" class="analiz-btn">PERFORMANS ANALİZİ</a>
+            <a href="{% url 'analiz_fark_ozeti' pk=sayim_emri.pk %}" class="analiz-btn fark-btn">CANLI FARK ÖZETİ (STOK GRUBU)</a>
+            <a href="{% url 'export_mutabakat_excel' pk=sayim_emri.pk %}" class="analiz-btn excel-btn">EXCEL OLARAK İNDİR</a>
+        </div>
+
+        {% if hata %}
+            <p style="color: red; font-weight: bold;">HATA: {{ hata }}</p>
+        {% endif %}
+
+        <table id="rapor-tablo">
+            <thead>
+                <tr>
+                    <th class="text-left" style="width: 15%;">Stok Kodu</th>
+                    <th class="text-left" style="width: 25%;">Stok Adı</th>
+                    <th>Parti No</th>
+                    <th>Renk</th>
+                    <th>Birim</th>
+                    <th>Sistem Mik.</th>
+                    <th>Sayım Mik.</th>
+                    <th>Mik. Fark</th>
+                    <th>Fark %</th>
+                    <th>Sistem Tutar (₺)</th>
+                    <th>Tutar Farkı (₺)</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for item in rapor_data %}
+                    <tr class="{{ item.tag }}">
+                        <td class="text-left">{{ item.kod }}</td>
+                        <td class="text-left">{{ item.ad }}</td>
+                        <td>{{ item.parti }}</td>
+                        <td>{{ item.renk }}</td>
+                        <td>{{ item.birim }}</td>
+                        <td>{{ item.sistem_mik }}</td>
+                        <td>{{ item.sayilan_mik }}</td>
+                        <td>{{ item.mik_fark }}</td>
+                        <td>{{ item.mik_yuzde }}</td>
+                        <td>{{ item.sistem_tutar }}</td>
+                        <td>{{ item.tutar_fark }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="11" class="text-left">Bu sayım emri için sayılmış veri bulunmamaktadır.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        {% if sayim_emri.durum == 'Açık' %}
+            <form method="post" action="{% url 'stoklari_onayla' pk=sayim_emri.pk %}" 
+                  onsubmit="return confirm('UYARI: Stoklar güncellenecek ve bu işlem geri alınamaz. Onaylıyor musunuz?');">
+                {% csrf_token %}
+                <button type="submit" class="onay-btn">STOKLARI GÜNCELLE ve SAYIMI ONAYLA</button>
+            </form>
+        {% endif %}
+    </div>
+</body>
+</html>

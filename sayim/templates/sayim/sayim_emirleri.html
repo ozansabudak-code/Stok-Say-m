@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sayım Emirleri</title>
+    <style>
+        /* Basit CSS stilleri */
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { color: #333; border-bottom: 2px solid #ccc; padding-bottom: 10px; }
+        .emir { border: 1px solid #ddd; padding: 15px; margin-bottom: 10px; border-radius: 5px; }
+        .emir-acik { background-color: #e6ffe6; border-left: 5px solid #4CAF50; }
+        .emir-kapali { background-color: #eee; border-left: 5px solid #999; }
+        .baslat-btn { background-color: #007bff; color: white; padding: 8px 15px; text-decoration: none; border-radius: 4px; display: inline-block; margin-right: 10px; }
+        .yeni-btn { background-color: #ff9800; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: block; text-align: center; margin-bottom: 20px; }
+        .durum { font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Stok Sayım Emirleri Yönetimi</h1>
+        
+        <a href="{% url 'yeni_sayim_emri' %}" class="yeni-btn">➕ YENİ SAYIM EMRİ OLUŞTUR</a>
+
+        <h2>Mevcut Emirler</h2>
+        
+        {% for emir in emirler %}
+            <div class="emir {% if emir.durum == 'Açık' %}emir-acik{% else %}emir-kapali{% endif %}">
+                <h3>{{ emir.ad }} (ID: {{ emir.pk }})</h3>
+                <p>Oluşturulma Tarihi: {{ emir.tarih|date:"d M Y H:i" }}</p>
+                <p class="durum">Durum: {{ emir.durum }}</p>
+                
+                {% if emir.durum == 'Açık' %}
+                    <a href="{% url 'depo_secim' sayim_emri_id=emir.pk %}" class="baslat-btn">SAYIM GİRİŞİNE GİT</a>
+                    
+                    <a href="{% url 'raporlama_onay' pk=emir.pk %}" class="baslat-btn" style="background-color: darkred;">RAPORLAMA/ONAY</a> 
+                {% else %}
+                    <a href="{% url 'raporlama_onay' pk=emir.pk %}" class="baslat-btn" style="background-color: #999;">RAPORU GÖR</a>
+                {% endif %}
+            </div>
+        {% empty %}
+            <p>Aktif veya tamamlanmış sayım emri bulunamadı. Lütfen yeni bir emir oluşturun.</p>
+        {% endfor %}
+    </div>
+</body>
+</html>

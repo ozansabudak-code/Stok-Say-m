@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Yönetim ve Veri Araçları</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f0f2f5; }
+        .container { max-width: 700px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { color: #8B0000; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 30px; }
+        .islem-kutusu { border: 1px solid #ddd; padding: 20px; margin-bottom: 20px; border-radius: 6px; }
+        .islem-kutusu h2 { margin-top: 0; font-size: 1.3em; }
+        .btn-action { padding: 10px 15px; border: none; border-radius: 4px; cursor: pointer; font-size: 1em; width: 100%; margin-top: 10px; }
+        .btn-danger { background-color: darkred; color: white; }
+        .btn-success { background-color: #007bff; color: white; }
+        .mesaj { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; }
+        .mesaj-success { background-color: #d4edda; color: #155724; }
+        .mesaj-error { background-color: #f8d7da; color: #721c24; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Yönetim Araçları</h1>
+        <p><a href="{% url 'sayim_emirleri' %}">← Ana Sayfaya Dön</a></p>
+        {% csrf_token %}
+
+        <div class="islem-kutusu">
+            <h2>1. Stok Verilerini Yeniden Yükle/Güncelle</h2>
+            <p>Mevcut Malzeme listesini siler/günceller. **Dosya yolu, komutu çalıştırdığınız bilgisayardaki Excel dosyasının tam yolu olmalıdır.**</p>
+            <input type="text" id="excel-path" placeholder="Örn: C:\Users\ozan\Masaüstü\stok_listesi.xlsx" style="width: 100%; padding: 10px;">
+            <button id="reload-btn" class="btn-action btn-success">EXCEL'DEN YÜKLEMEYİ BAŞLAT</button>
+            <div id="reload-message" class="mesaj"></div>
+        </div>
+
+        <div class="islem-kutusu">
+            <h2>2. Tüm Sayım Kayıtlarını SIFIRLA</h2>
+            <p>Bu işlem, tüm Sayım Emirleri ve Sayım Detayları'nı **kalıcı olarak siler** (Malzemeler tablosu hariç).</p>
+            <button id="reset-btn" class="btn-action btn-danger">TÜM SAYIM VERİLERİNİ SİL</button>
+            <div id="reset-message" class="mesaj"></div>
+        </div>
+    </div>
+
+<script>
+    const CSRF_TOKEN = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+
+    function handleResponse(response, messageId) {
+        const messageBox = document.getElementById(messageId);
+        messageBox.style.display = 'block';
+
+        if (response.success) {
+            messageBox.className = 'mesaj mesaj-success';
+            messageBox.textContent = response.message;
+        } else {
+            messageBox.className = 'mesaj mesaj-error';
+            messageBox.textContent = `HATA: ${response.message}`;
+        }
+    }
+
+    // 1. Sayım Verisi Sıfırlama
+    document.getElementById('reset-btn').addEventListener('click', () => {
+        if (!confirm('UYARI: Bu işlem geri alınamaz! Tüm sayım emirleri ve detayları silinecektir. Emin misiniz?')) {
+            return;
+        }
+        
+        fetch('{% url "reset_sayim_data" %}', {
+            method: 'POST',
+            headers: { 'X-CSRFToken': CSRF_TOKEN }
+        })
+        .then(res => res.json())
+        .then(data => handleResponse(data, 'reset-message'))
+        .catch(error => handleResponse({ success: false, message: 'Sunucu bağlantı hatası.' }, 'reset-message'));
+    });
+
+    // 2. Stok Verisi Yeniden Yükleme
+    document.getElementById('reload-btn').addEventListener('click', () => {
+        const path = document.getElementById('excel-path').value;
+
+        if (!path) {
+            alert('Lütfen Excel dosya yolunu girin.');
+            return;
+        }
+        
+        fetch('{% url "reload_stok_data" %}', {
+            method: 'POST',
+            headers: { 
+                'Content-Type': 'application/x-www-form-urlencoded',
+                'X-CSRFToken': CSRF_TOKEN 
+            },
+            body: `file_path=${encodeURIComponent(path)}`
+        })
+        .then(res => res.json())
+        .then(data => handleResponse(data, 'reload-message'))
+        .catch(error => handleResponse({ success: false, message: 'Sunucu bağlantı hatası.' }, 'reload-message'));
+    });
+</script>
+</body>
+</html>

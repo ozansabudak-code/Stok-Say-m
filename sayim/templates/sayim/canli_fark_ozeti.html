@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Canlı Stok Fark Özeti</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 1200px; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { color: #28a745; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.9em; }
+        th, td { border: 1px solid #ddd; padding: 10px 15px; text-align: right; }
+        th { background-color: #e9f5ee; font-weight: bold; }
+        .grup { text-align: left; font-weight: bold; }
+        .fazla { color: green; font-weight: bold; }
+        .eksik { color: darkred; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Canlı Stok Grup Bazında Mutabakat Özeti</h1>
+        <h2 style="color: #6c757d; font-size: 1.2em;">Emir: {{ sayim_emri.ad }} (ID: {{ sayim_emri.pk }})</h2>
+
+        <p style="margin-top: 20px;"><a href="{% url 'raporlama_onay' pk=sayim_emri.pk %}">← Mutabakat Raporuna Geri Dön</a></p>
+
+        {% if hata %}
+            <p style="color: red; font-weight: bold;">HATA: {{ hata }}</p>
+        {% endif %}
+
+        {% if analiz_data %}
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th class="grup" style="width: 15%;">Stok Grubu</th>
+                        <th>Sistem Mik.</th>
+                        <th>Sistem Tutar (₺)</th>
+                        <th>Fazla Mik.</th>
+                        <th>Fazla Tutar (₺)</th>
+                        <th>Eksik Mik.</th>
+                        <th>Eksik Tutar (₺)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in analiz_data %}
+                    <tr>
+                        <td class="grup">{{ item.grup }}</td>
+                        <td>{{ item.sistem_mik }}</td>
+                        <td>{{ item.sistem_tutar }}</td> 
+                        <td class="fazla">{{ item.fazla_mik }}</td>
+                        <td class="fazla">{{ item.fazla_tutar }}</td>
+                        <td class="eksik">{{ item.eksik_mik }}</td>
+                        <td class="eksik">{{ item.eksik_tutar }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>Bu emre ait stok grubu özeti verisi bulunamadı.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

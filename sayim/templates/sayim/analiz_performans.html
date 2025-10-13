@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Personel Performans Analizi</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { color: #007bff; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 1em; }
+        th, td { border: 1px solid #ddd; padding: 10px 15px; text-align: center; }
+        th { background-color: #e9ecef; }
+        .hizli { color: green; font-weight: bold; }
+        .yavas { color: darkred; }
+        .orta { color: orange; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Personel Performans Analizi</h1>
+        <h2 style="color: #6c757d; font-size: 1.2em;">Emir: {{ sayim_emri.ad }} (ID: {{ sayim_emri.pk }})</h2>
+
+        <p style="margin-top: 20px;"><a href="{% url 'raporlama_onay' pk=sayim_emri.pk %}">← Mutabakat Raporuna Geri Dön</a></p>
+
+        {% if hata %}
+            <p style="color: red; font-weight: bold;">HATA: {{ hata }}</p>
+        {% endif %}
+
+        {% if analiz_data %}
+            <p>Rapor, personelin ilk ve son kaydı arasındaki toplam sürenin, toplam sayım adedine bölünmesiyle elde edilen ortalama hızı gösterir.</p>
+            <table class="table table-striped">
+                <thead>
+                    <tr>
+                        <th style="text-align: left;">Personel Adı</th>
+                        <th>Ortalama Kayıt Hızı (Saniye / Kayıt)</th>
+                        <th>Toplam Kayıt Sayısı</th>
+                        <th>Toplam Süre (Sn.)</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in analiz_data %}
+                        <tr>
+                            <td style="text-align: left;">{{ item.personel }}</td>
+                            <td class="{% if item.ortalama_sure_sn|slice:":1" == '0' %}hizli{% else %}orta{% endif %}">
+                                **{{ item.ortalama_sure_sn }} sn** ({{ item.ortalama_sure_formatli }})
+                            </td>
+                            <td>{{ item.toplam_kayit }}</td>
+                            <td>{{ item.toplam_sure_sn }} sn</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>Bu emre ait analiz edilebilir sayım verisi bulunamadı.</p>
+        {% endif %}
+    </div>
+</body>
+</html>

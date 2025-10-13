@@ -1,0 +1,32 @@
+# ---------------------------------------------
+# 1. YEREL ORTAM VE KURULUM
+# ---------------------------------------------
+# Python Sanal Ortamı: Yüklenmemeli, Render kendi ortamını kurar
+venv/
+.venv/
+
+# Otomatik Derleme Dosyaları
+__pycache__/
+*.pyc
+*.pyo
+
+# ---------------------------------------------
+# 2. HASSAS/YEREL VERİ VE ÇIKTI
+# ---------------------------------------------
+# Yerel Veritabanı: Canlı ortamda PostgreSQL kullanılacak
+db.sqlite3
+
+# Otomatik Toplanan Statik Dosyalar: Render'da yeniden oluşturulacak
+/staticfiles/
+
+# Çıktı ve Log Dosyaları
+*.log
+*.sqlite3-journal
+
+# ---------------------------------------------
+# 3. İDE ve İŞLETİM SİSTEMİ
+# ---------------------------------------------
+.vscode/   # VS Code ayarları
+.idea/     # PyCharm/IntelliJ ayarları
+.DS_Store  # macOS sistem dosyası
+Thumbs.db  # Windows küçük resim önbelleği
