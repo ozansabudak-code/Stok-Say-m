@@ -35,7 +35,7 @@ from .models import SayimEmri, Malzeme, SayimDetay, standardize_id_part, generat
 from .forms import SayimGirisForm
 
 # --- GEMINI SABİTLERİ ---
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") 
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 try:
     if GEMINI_API_KEY:
@@ -184,7 +184,7 @@ class PerformansAnaliziView(DetailView):
         sayim_emri_id = kwargs['object'].pk
 
         try:
-            # SQL sorgusu: Personelleri al. 
+            # SQL sorgusu: Personelleri al.
             query = f"""
                 SELECT
                     personel_adi,
@@ -206,8 +206,8 @@ class PerformansAnaliziView(DetailView):
                 # --- Ortalama Süre Hesaplama ve Durum Etiketleme ---
                 if toplam_kayit > 1:
                     # N kayıt için N-1 aralık vardır.
-                    ortalama_sure_sn = toplam_saniye / (toplam_kayit - 1) 
-                    
+                    ortalama_sure_sn = toplam_saniye / (toplam_kayit - 1)
+
                     if ortalama_sure_sn > 3600:
                         # Ortalama hız 1 saatin üzerindeyse, bu verinin hatalı/aykırı olduğunu varsayalım.
                         etiket = 'Aykırı Veri ( > 1 Saat/Kayıt)'
@@ -216,7 +216,7 @@ class PerformansAnaliziView(DetailView):
                         dakika = int(ortalama_sure_sn // 60)
                         saniye_kalan = int(ortalama_sure_sn % 60)
                         etiket = f"{dakika:02d}:{saniye_kalan:02d}"
-                        
+
                 else:
                     # Tek kayıt varsa hız hesaplanamaz.
                     ortalama_sure_sn = float('inf') # Sıralamada sona atmak için sonsuz değer
@@ -236,10 +236,10 @@ class PerformansAnaliziView(DetailView):
             # Gösterim için 'inf' olanları '0.00' veya önceki etiketiyle güncelle
             for item in analiz_list:
                 if item['ortalama_sure_sn'] == float('inf'):
-                    item['ortalama_sure_sn'] = '0.00' 
+                    item['ortalama_sure_sn'] = '0.00'
                 else:
                      item['ortalama_sure_sn'] = f"{item['ortalama_sure_sn']:.2f}"
-                     
+
             context['analiz_data'] = analiz_list
 
         except Exception as e:
@@ -547,30 +547,49 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
 def gemini_parti_oku(request):
     """
     Gemini Vision kullanarak etiket fotoğrafından Stok Kodu, Parti No ve Varyant okur.
-    JSON zorlaması ile yanıt tutarlılığını artırır ve OCR ile yedekleme yapar.
+    YENİLİK: Yüksek çözünürlüklü mobil fotoğrafları işlemek için yeniden boyutlandırma/sıkıştırma eklendi.
     """
     if not GEMINI_AVAILABLE:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
 
     if request.method == 'POST' and request.FILES.get('image'):
-        
-        # HATA DÜZELTMESİ: uploaded_file burada tanımlanmalı.
-        uploaded_file = request.FILES['image'] 
-        
-        # Görsel boyutu kontrolü
-        if uploaded_file.size > 5 * 1024 * 1024:
-            return JsonResponse({'success': False, 'message': 'Görsel boyutu 5MB sınırını aşıyor.'}, status=400)
 
+        uploaded_file = request.FILES['image']
+
+        # YÜKSEK ÇÖZÜNÜRLÜKLÜ GÖRSELİ OKUMA VE ÖN İŞLEME
         try:
             image_data = uploaded_file.read()
-            img = Image.open(BytesIO(image_data))
+            img_original = Image.open(BytesIO(image_data))
+            
+            # Yeniden Boyutlandırma ve Sıkıştırma Ayarları
+            MAX_SIZE = (1500, 1500) # Maksimum çözünürlük sınırı
+            JPEG_QUALITY = 85      # Sıkıştırma kalitesi
+            
+            img_original.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS) # Yüksek kaliteli yeniden boyutlandırma
+            
+            # Sıkıştırılmış veriyi BytesIO nesnesine JPEG olarak yaz
+            buffer_compressed = BytesIO()
+            # RGB'ye dönüştürmek, dosya boyutu tutarlılığı için en iyisidir
+            if img_original.mode in ('RGBA', 'P'):
+                img_original = img_original.convert('RGB')
+            
+            img_original.save(buffer_compressed, format="JPEG", quality=JPEG_QUALITY)
+            buffer_compressed.seek(0)
+            
+            # Sıkıştırılmış dosyanın boyutunu 5MB'ın altında tuttuğumuzdan emin olalım
+            if buffer_compressed.getbuffer().nbytes > 5 * 1024 * 1024:
+                return JsonResponse({'success': False, 'message': 'Görsel ön işleme sonrası bile 5MB sınırını aşıyor.'}, status=400)
+            
+            # Gemini'a göndereceğimiz Image nesnesi (RGB)
+            img_for_gemini = Image.open(buffer_compressed)
+            
+            # Pytesseract için gri tonlama (Orijinal kodunuzdaki gibi)
+            img_tesseract = img_for_gemini.convert('L') 
 
-            # Görüntüyü ön işleme (Boyutlandırma hız için kaldırıldı)
-            img = img.convert('L') # Gri tonlama
-
+            # PROMPT İYİLEŞTİRMESİ
             prompt = (
-                "Bu bir stok sayım etiketinin fotoğrafıdır. Stok Kodu, Parti Numarası ve Varyant (renk) bilgilerini MUTLAKA etiket üzerindeki yazıldığı şekliyle okuyun. Eğer varyant etikette yazmıyorsa boş bırakın."
-                "Tüm yanıtı sadece ve sadece istenen JSON formatında döndürün."
+                "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Stok Kodu, Parti Numarası ve Varyant (renk) bilgilerini okumaktır. "
+                "Önemli Kurallar: 1. Tüm değerleri etiket üzerinde gördüğünüz ham metin olarak döndürün. 2. Eğer bir alan (özellikle Varyant) etikette kesinlikle yoksa veya okunamıyorsa, değeri sadece 'YOK' olarak döndürün. 3. Tüm yanıtı SADECE aşağıdaki JSON şemasına uygun döndürün."
             )
 
             response_schema = {
@@ -585,7 +604,7 @@ def gemini_parti_oku(request):
             # --- 1. Adım: Gemini ile Oku (JSON Zorlaması) ---
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
-                contents=[prompt, img],
+                contents=[prompt, img_for_gemini],
                 config={
                     "response_mime_type": "application/json",
                     "response_schema": response_schema
@@ -594,10 +613,17 @@ def gemini_parti_oku(request):
 
             try:
                 json_string = response.text.strip()
+                # Yanıtın başında veya sonunda olası Markdown '```json' etiketlerini temizle (Sağlamlaştırma)
+                if json_string.startswith("```json"):
+                    json_string = json_string.strip("```json").strip()
+                if json_string.endswith("```"):
+                    json_string = json_string.strip("```").strip()
+
                 parsed_data = json.loads(json_string)
 
             except json.JSONDecodeError as e:
-                return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Hata: {e}', 'raw_text': response.text}, status=500)
+                # JSON çözümlenemezse, Gemini'dan gelen ham metni döndür (Hata Tespiti için)
+                return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Lütfen etiketi net çekin. Hata: {e}', 'raw_text': response.text}, status=500)
 
 
             stok_kod_raw = parsed_data.get('Stok Kodu', '')
@@ -609,8 +635,9 @@ def gemini_parti_oku(request):
             varyant = varyant_raw.strip().upper()
 
             # --- 2. Adım: Varyant Eksikse OCR ile Görüntüyü Taramayı Dene (Yedekleme) ---
+            # Varyant Gemini'da 'YOK' gelirse veya boşsa Tesseract ile dene
             if not varyant or varyant in ['...', '']:
-                text = pytesseract.image_to_string(img, lang='tur').upper()
+                text = pytesseract.image_to_string(img_tesseract, lang='tur').upper()
                 if 'VARYANT' in text:
                     try:
                         start_index = text.find('VARYANT')
@@ -619,7 +646,7 @@ def gemini_parti_oku(request):
                         if len(sub_text) > 2 and sub_text not in ['...', 'BILINMIYOR', 'YOK']:
                             varyant = sub_text
                     except:
-                        pass 
+                        pass
 
             # Son kontrol ve standartlaştırma
             if not varyant or varyant in ['...', '']:
