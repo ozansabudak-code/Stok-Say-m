@@ -2,6 +2,7 @@
 
 import json
 import time
+import os # Yeni eklendi (Gerekli olmalı)
 from datetime import datetime
 from io import BytesIO
 import base64
@@ -30,43 +31,26 @@ from google import genai
 from google.genai.errors import APIError
 
 # Local Imports
-# (Bu modüllerin uygulamanızda mevcut olduğunu varsayıyorum)
 from .models import SayimEmri, Malzeme, SayimDetay, standardize_id_part, generate_unique_id
 from .forms import SayimGirisForm
-# from .auth_utils import admin_kontrolu # Rol kontrolü için gerekli
-
-# -*- coding: utf-8 -*-
-# ... diğer import'lar
-
-import os # Bu satırın eklenmiş olması gerekir!
-# ...
 
 # --- GEMINI SABİTLERİ ---
-# Eski Kodu Silin: GEMINI_API_KEY = "AIzaSyAAJqkLV7DnvNnex4Ol55cdJed6nRBA4QQ"
-
-# YENİ KOD: Anahtarı Ortam Değişkeninden Oku
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY") 
 
 try:
-    # Anahtar varsa ve boş değilse istemciyi başlat
     if GEMINI_API_KEY:
         client = genai.Client(api_key=GEMINI_API_KEY)
         GEMINI_AVAILABLE = True
     else:
-        # Anahtar ortamda tanımlı değilse
         GEMINI_AVAILABLE = False
-        print("UYARI: GEMINI_API_KEY ortam değişkeni tanımlı değil. Gemini işlevleri yerelde çalışmayacak.")
-except Exception as e:
-    # İstemci başlatılırken API hatası olursa
+except Exception:
     GEMINI_AVAILABLE = False
-    print(f"UYARI: Gemini istemcisi başlatılamadı: {e}")
 
 # Resim dosyalarının okunmasını desteklemek için
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
 # --- GÖRÜNÜMLER (VIEWS) ---
-
 class SayimEmirleriListView(ListView):
     model = SayimEmri
     template_name = 'sayim/sayim_emirleri.html'
@@ -419,6 +403,7 @@ def get_last_sayim_info(benzersiz_id):
             'personel': latest_record.personel_adi
         }
     return None
+
 @csrf_exempt
 def ajax_stok_ara(request):
     """AJAX ile Stok Koduna göre varyantları ve son sayım bilgisini çeker."""
@@ -466,6 +451,7 @@ def ajax_stok_ara(request):
             response_data['urun_bilgi'] = "Varyant eşleşmesi bulunamadı. Yeni stok olabilir."
 
         return JsonResponse(response_data)
+
 @csrf_exempt
 def ajax_sayim_kaydet(request, sayim_emri_id):
     """AJAX ile sayım miktarını kaydeder; yeni stokları otomatik ekler ve mevcut miktarın üzerine ekler."""
@@ -556,36 +542,37 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
 
         except Exception as e:
             return JsonResponse({'success': False, 'message': f'Beklenmedik bir hata oluştu: {e}'}, status=500)
+
 @csrf_exempt
 def gemini_parti_oku(request):
     """
     Gemini Vision kullanarak etiket fotoğrafından Stok Kodu, Parti No ve Varyant okur.
-    Varyant bilgisini okuyamazsa OCR ile yedekleme yapmayı dener.
-    JSON zorlaması ile yanıt tutarlılığını artırır.
+    JSON zorlaması ile yanıt tutarlılığını artırır ve OCR ile yedekleme yapar.
     """
-    # Gerekli import'lar: json, genai, APIError, ImageFile, vb.
-    # ...
-
     if not GEMINI_AVAILABLE:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
 
     if request.method == 'POST' and request.FILES.get('image'):
-        # ... (Dosya boyutu kontrolü ve görüntü ön işleme adımları) ...
         
+        # HATA DÜZELTMESİ: uploaded_file burada tanımlanmalı.
+        uploaded_file = request.FILES['image'] 
+        
+        # Görsel boyutu kontrolü
+        if uploaded_file.size > 5 * 1024 * 1024:
+            return JsonResponse({'success': False, 'message': 'Görsel boyutu 5MB sınırını aşıyor.'}, status=400)
+
         try:
             image_data = uploaded_file.read()
             img = Image.open(BytesIO(image_data))
 
-            # Görüntüyü ön işleme (hem Gemini hem de OCR için)
-            img = img.convert('L')
-            img = img.resize((img.width * 2, img.height * 2), Image.Resampling.LANCZOS)
+            # Görüntüyü ön işleme (Boyutlandırma hız için kaldırıldı)
+            img = img.convert('L') # Gri tonlama
 
             prompt = (
                 "Bu bir stok sayım etiketinin fotoğrafıdır. Stok Kodu, Parti Numarası ve Varyant (renk) bilgilerini MUTLAKA etiket üzerindeki yazıldığı şekliyle okuyun. Eğer varyant etikette yazmıyorsa boş bırakın."
                 "Tüm yanıtı sadece ve sadece istenen JSON formatında döndürün."
             )
 
-            # JSON SCHEMA tanımı: Modeli sadece bu yapıda yanıt vermeye zorlar.
             response_schema = {
                 "type": "OBJECT",
                 "properties": {
@@ -595,7 +582,7 @@ def gemini_parti_oku(request):
                 }
             }
 
-            # --- 1. Adım: Gemini ile Oku (JSON Zorlaması Eklendi) ---
+            # --- 1. Adım: Gemini ile Oku (JSON Zorlaması) ---
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=[prompt, img],
@@ -606,12 +593,10 @@ def gemini_parti_oku(request):
             )
 
             try:
-                # JSON zorlandığı için manuel temizlemeye gerek kalmaz, doğrudan parse edilebilir.
                 json_string = response.text.strip()
                 parsed_data = json.loads(json_string)
 
             except json.JSONDecodeError as e:
-                # JSON çözülemezse, API'den gelen ham metni loglayabiliriz.
                 return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Hata: {e}', 'raw_text': response.text}, status=500)
 
 
@@ -619,14 +604,29 @@ def gemini_parti_oku(request):
             parti_no_raw = parsed_data.get('Parti No', '')
             varyant_raw = parsed_data.get('Varyant', '')
 
-            # ... (Gelen verileri standartlaştırma ve OCR yedekleme mantığı devam eder) ...
-            # ...
+            stok_kod = standardize_id_part(stok_kod_raw)
+            parti_no = standardize_id_part(parti_no_raw)
+            varyant = varyant_raw.strip().upper()
+
+            # --- 2. Adım: Varyant Eksikse OCR ile Görüntüyü Taramayı Dene (Yedekleme) ---
+            if not varyant or varyant in ['...', '']:
+                text = pytesseract.image_to_string(img, lang='tur').upper()
+                if 'VARYANT' in text:
+                    try:
+                        start_index = text.find('VARYANT')
+                        sub_text = text[start_index:].split('\n')[0].split(':')[1].strip() if ':' in text[start_index:].split('\n')[0] else text[start_index:].split('\n')[0].strip().replace('VARYANT', '').strip()
+
+                        if len(sub_text) > 2 and sub_text not in ['...', 'BILINMIYOR', 'YOK']:
+                            varyant = sub_text
+                    except:
+                        pass 
+
             # Son kontrol ve standartlaştırma
             if not varyant or varyant in ['...', '']:
                  varyant = 'BILINMIYOR'
             else:
-                 # Varyantı da standartlaştırıyoruz ki benzersiz ID doğru oluşsun
                  varyant = standardize_id_part(varyant)
+
 
             return JsonResponse({
                 'success': True,
