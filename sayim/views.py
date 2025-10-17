@@ -2,7 +2,7 @@
 
 import json
 import time
-import os # Yeni eklendi (Gerekli olmalı)
+import os
 from datetime import datetime
 from io import BytesIO
 import base64
@@ -24,13 +24,14 @@ from django.core.management import call_command
 from PIL import Image
 import pandas as pd
 import pytesseract # OCR için gerekli kütüphane
-from PIL import Image, ImageFile # ImageFile, olası dosya hatalarını ele almak için eklendi
+from PIL import Image, ImageFile 
 
 # Gemini (Google GenAI) Imports
 from google import genai
 from google.genai.errors import APIError
 
 # Local Imports
+# (Malzeme modelinde 'seri_no' alanı olması beklenmektedir)
 from .models import SayimEmri, Malzeme, SayimDetay, standardize_id_part, generate_unique_id
 from .forms import SayimGirisForm
 
@@ -330,7 +331,10 @@ def stoklari_onayla_ve_kapat(request, pk):
 
         for detay in sayim_detaylari:
             malzeme_id = detay.benzersiz_malzeme.benzersiz_id
-            latest_counts[malzeme_id] = detay.sayilan_stok
+            # NOTE: Bu kısımda, en son sayılan miktarı alıp üzerine yazmak yerine,
+            # Malzeme/Emir bazında toplanan miktarı alıyoruz.
+            latest_counts[malzeme_id] = latest_counts.get(malzeme_id, 0.0) + detay.sayilan_stok 
+
 
         for benzersiz_id, yeni_stok in latest_counts.items():
             malzeme = Malzeme.objects.get(benzersiz_id=benzersiz_id)
@@ -404,53 +408,106 @@ def get_last_sayim_info(benzersiz_id):
         }
     return None
 
+# ####################################################################################
+# YENİ AKILLI ARAMA FONKSİYONU - ESKİ ajax_stok_ara'nın YERİNİ ALIR
+# ####################################################################################
+
 @csrf_exempt
-def ajax_stok_ara(request):
-    """AJAX ile Stok Koduna göre varyantları ve son sayım bilgisini çeker."""
-    if request.method == 'GET':
-        stok_kod_raw = request.GET.get('stok_kod', '')
-        parti_no_raw = request.GET.get('parti_no', '')
-        renk_raw = request.GET.get('renk', '')
-        depo_kod = request.GET.get('depo_kod', 'MERKEZ')
+def ajax_akilli_stok_ara(request):
+    """
+    AJAX ile akıllı arama yapar (Seri No öncelikli, Parti No yedekli).
+    Eski ajax_stok_ara'nın yerine geçer.
+    """
+    if request.method != 'GET':
+        return JsonResponse({'success': False, 'message': 'Geçersiz metot.'}, status=400)
+    
+    # Giriş parametrelerini al
+    seri_no_raw = request.GET.get('seri_no', '') # Yeni alan
+    stok_kod_raw = request.GET.get('stok_kod', '')
+    parti_no_raw = request.GET.get('parti_no', '')
+    renk_raw = request.GET.get('renk', '')
+    depo_kod_raw = request.GET.get('depo_kod', 'MERKEZ')
 
-        stok_kod = standardize_id_part(stok_kod_raw)
-        parti_no = standardize_id_part(parti_no_raw)
-        renk = standardize_id_part(renk_raw)
-        depo_kod_s = standardize_id_part(depo_kod)
+    # Verileri standartlaştır
+    seri_no = standardize_id_part(seri_no_raw)
+    stok_kod = standardize_id_part(stok_kod_raw)
+    parti_no = standardize_id_part(parti_no_raw)
+    renk = standardize_id_part(renk_raw)
+    depo_kod_s = standardize_id_part(depo_kod_raw)
 
-        response_data = {
-            'found': False,
-            'parti_varyantlar': [],
-            'renk_varyantlar': [],
-            'urun_bilgi': 'Stok kodu girin...',
-            'last_sayim': 'Bilinmiyor'
-        }
+    response_data = {
+        'found': False,
+        'stok_kod': stok_kod,
+        'parti_no': parti_no,
+        'renk': renk,
+        'parti_varyantlar': [],
+        'renk_varyantlar': [],
+        'urun_bilgi': 'Stok kodu veya Seri No girin...',
+        'last_sayim': 'Bilinmiyor'
+    }
 
-        if stok_kod == 'YOK' or len(stok_kod) < 3:
-            return JsonResponse(response_data)
+    malzeme = None
+    
+    # --- 1. Öncelik: Seri No Arama (Seri No varsa) ---
+    # Malzeme modelinde 'seri_no' alanı olması ZORUNLUDUR.
+    if seri_no != 'YOK' and len(seri_no) >= 3:
+        try:
+            malzeme = Malzeme.objects.filter(
+                seri_no=seri_no, 
+                lokasyon_kodu=depo_kod_s
+            ).first()
 
-        filtre = {'malzeme_kodu': stok_kod, 'lokasyon_kodu': depo_kod_s}
+            if malzeme:
+                # Seri No ile bulundu, Stok Kodu, Parti ve Renk bilgileri güncellenir.
+                response_data['found'] = True
+                response_data['stok_kod'] = malzeme.malzeme_kodu
+                response_data['parti_no'] = malzeme.parti_no
+                response_data['renk'] = malzeme.renk
+                response_data['urun_bilgi'] = f"Seri No ile bulundu: {malzeme.malzeme_adi} ({malzeme.olcu_birimi}). Sistem: {malzeme.sistem_stogu:.2f}"
+                
+                last_sayim_info = get_last_sayim_info(malzeme.benzersiz_id)
+                if last_sayim_info:
+                    response_data['last_sayim'] = f"{last_sayim_info['tarih']} - {last_sayim_info['personel']}"
+                
+                return JsonResponse(response_data)
+        except Exception as e:
+            # Seri No aramasında bir hata olursa (ör. seri_no alanı yoksa) loglama yapılabilir.
+            pass # Parti No arayışına devam et
 
-        parti_varyantlar = Malzeme.objects.filter(**filtre).values_list('parti_no', flat=True).distinct()
-        renk_varyantlar = Malzeme.objects.filter(**filtre).values_list('renk', flat=True).distinct()
-
-        response_data['parti_varyantlar'] = sorted(list(set(list(parti_varyantlar))))
-        response_data['renk_varyantlar'] = sorted(list(set(list(renk_varyantlar))))
-
+    # --- 2. Öncelik: Parti No / Tam Eşleşme Arama (Seri No başarısız olduysa) ---
+    if stok_kod != 'YOK' and parti_no != 'YOK' and renk != 'YOK':
         benzersiz_id = generate_unique_id(stok_kod, parti_no, depo_kod_s, renk)
         malzeme = Malzeme.objects.filter(benzersiz_id=benzersiz_id).first()
-
+        
         if malzeme:
+            # Tam eşleşme ile bulundu.
             response_data['found'] = True
-            response_data['urun_bilgi'] = f"{malzeme.malzeme_adi} ({malzeme.olcu_birimi}). Sistem: {malzeme.sistem_stogu:.2f}"
+            response_data['urun_bilgi'] = f"Parti No ile tam eşleşme: {malzeme.malzeme_adi} ({malzeme.olcu_birimi}). Sistem: {malzeme.sistem_stogu:.2f}"
 
             last_sayim_info = get_last_sayim_info(benzersiz_id)
             if last_sayim_info:
                 response_data['last_sayim'] = f"{last_sayim_info['tarih']} - {last_sayim_info['personel']}"
-        else:
-            response_data['urun_bilgi'] = "Varyant eşleşmesi bulunamadı. Yeni stok olabilir."
 
-        return JsonResponse(response_data)
+            return JsonResponse(response_data)
+
+
+    # --- 3. Öncelik: Stok Kodu Bazlı Varyant Listeleme (Hiçbir eşleşme yoksa) ---
+    if stok_kod != 'YOK' and len(stok_kod) >= 3:
+        filtre = {'malzeme_kodu': stok_kod, 'lokasyon_kodu': depo_kod_s}
+        
+        parti_varyantlar = Malzeme.objects.filter(**filtre).values_list('parti_no', flat=True).distinct()
+        renk_varyantlar = Malzeme.objects.filter(**filtre).values_list('renk', flat=True).distinct()
+        
+        response_data['parti_varyantlar'] = sorted(list(set(list(parti_varyantlar))))
+        response_data['renk_varyantlar'] = sorted(list(set(list(renk_varyantlar))))
+        response_data['urun_bilgi'] = "Seri/Parti eşleşmedi. Stok koduna ait varyantlar listelendi. Yeni stok olabilir."
+
+
+    return JsonResponse(response_data)
+
+# ####################################################################################
+# ajax_sayim_kaydet fonksiyonu aynı kalır
+# ####################################################################################
 
 @csrf_exempt
 def ajax_sayim_kaydet(request, sayim_emri_id):
@@ -497,6 +554,7 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
                     sistem_stogu=0.0,
                     birim_fiyat=0.0,
                     benzersiz_id=benzersiz_id
+                    # Seri No burada otomatik olarak boş veya 'YOK' kalacaktır.
                 )
 
             mevcut_kayit, created = SayimDetay.objects.get_or_create(
@@ -543,11 +601,14 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
         except Exception as e:
             return JsonResponse({'success': False, 'message': f'Beklenmedik bir hata oluştu: {e}'}, status=500)
 
+# ####################################################################################
+# gemini_parti_oku fonksiyonu Seri No'yu okuyacak şekilde güncellendi
+# ####################################################################################
+
 @csrf_exempt
 def gemini_parti_oku(request):
     """
-    Gemini Vision kullanarak etiket fotoğrafından Stok Kodu, Parti No ve Varyant okur.
-    YENİLİK: Yüksek çözünürlüklü mobil fotoğrafları işlemek için yeniden boyutlandırma/sıkıştırma eklendi.
+    Gemini Vision kullanarak etiket fotoğrafından Seri No, Stok Kodu, Parti No ve Varyant okur.
     """
     if not GEMINI_AVAILABLE:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
@@ -562,39 +623,35 @@ def gemini_parti_oku(request):
             img_original = Image.open(BytesIO(image_data))
             
             # Yeniden Boyutlandırma ve Sıkıştırma Ayarları
-            MAX_SIZE = (1500, 1500) # Maksimum çözünürlük sınırı
-            JPEG_QUALITY = 85      # Sıkıştırma kalitesi
+            MAX_SIZE = (1500, 1500) 
+            JPEG_QUALITY = 85
             
-            img_original.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS) # Yüksek kaliteli yeniden boyutlandırma
+            img_original.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
             
-            # Sıkıştırılmış veriyi BytesIO nesnesine JPEG olarak yaz
             buffer_compressed = BytesIO()
-            # RGB'ye dönüştürmek, dosya boyutu tutarlılığı için en iyisidir
             if img_original.mode in ('RGBA', 'P'):
                 img_original = img_original.convert('RGB')
             
             img_original.save(buffer_compressed, format="JPEG", quality=JPEG_QUALITY)
             buffer_compressed.seek(0)
             
-            # Sıkıştırılmış dosyanın boyutunu 5MB'ın altında tuttuğumuzdan emin olalım
             if buffer_compressed.getbuffer().nbytes > 5 * 1024 * 1024:
                 return JsonResponse({'success': False, 'message': 'Görsel ön işleme sonrası bile 5MB sınırını aşıyor.'}, status=400)
             
-            # Gemini'a göndereceğimiz Image nesnesi (RGB)
             img_for_gemini = Image.open(buffer_compressed)
-            
-            # Pytesseract için gri tonlama (Orijinal kodunuzdaki gibi)
             img_tesseract = img_for_gemini.convert('L') 
 
-            # PROMPT İYİLEŞTİRMESİ
+            # PROMPT GÜNCELLENDİ (Seri No Eklendi)
             prompt = (
-                "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Stok Kodu, Parti Numarası ve Varyant (renk) bilgilerini okumaktır. "
+                "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Seri Numarası, Stok Kodu, Parti Numarası ve Varyant (renk) bilgilerini okumaktır. "
                 "Önemli Kurallar: 1. Tüm değerleri etiket üzerinde gördüğünüz ham metin olarak döndürün. 2. Eğer bir alan (özellikle Varyant) etikette kesinlikle yoksa veya okunamıyorsa, değeri sadece 'YOK' olarak döndürün. 3. Tüm yanıtı SADECE aşağıdaki JSON şemasına uygun döndürün."
             )
 
+            # SCHEMA GÜNCELLENDİ (Seri No Eklendi)
             response_schema = {
                 "type": "OBJECT",
                 "properties": {
+                    "Seri No": {"type": "STRING"},
                     "Stok Kodu": {"type": "STRING"},
                     "Parti No": {"type": "STRING"},
                     "Varyant": {"type": "STRING"}
@@ -613,7 +670,6 @@ def gemini_parti_oku(request):
 
             try:
                 json_string = response.text.strip()
-                # Yanıtın başında veya sonunda olası Markdown '```json' etiketlerini temizle (Sağlamlaştırma)
                 if json_string.startswith("```json"):
                     json_string = json_string.strip("```json").strip()
                 if json_string.endswith("```"):
@@ -622,20 +678,20 @@ def gemini_parti_oku(request):
                 parsed_data = json.loads(json_string)
 
             except json.JSONDecodeError as e:
-                # JSON çözümlenemezse, Gemini'dan gelen ham metni döndür (Hata Tespiti için)
                 return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Lütfen etiketi net çekin. Hata: {e}', 'raw_text': response.text}, status=500)
 
-
+            # Seri No ve diğer bilgileri çek
+            seri_no_raw = parsed_data.get('Seri No', '')
             stok_kod_raw = parsed_data.get('Stok Kodu', '')
             parti_no_raw = parsed_data.get('Parti No', '')
             varyant_raw = parsed_data.get('Varyant', '')
 
+            seri_no = standardize_id_part(seri_no_raw)
             stok_kod = standardize_id_part(stok_kod_raw)
             parti_no = standardize_id_part(parti_no_raw)
             varyant = varyant_raw.strip().upper()
 
             # --- 2. Adım: Varyant Eksikse OCR ile Görüntüyü Taramayı Dene (Yedekleme) ---
-            # Varyant Gemini'da 'YOK' gelirse veya boşsa Tesseract ile dene
             if not varyant or varyant in ['...', '']:
                 text = pytesseract.image_to_string(img_tesseract, lang='tur').upper()
                 if 'VARYANT' in text:
@@ -657,10 +713,11 @@ def gemini_parti_oku(request):
 
             return JsonResponse({
                 'success': True,
+                'seri_no': seri_no, # Yeni
                 'stok_kod': stok_kod,
                 'parti_no': parti_no,
                 'renk': varyant,
-                'message': f'Veri başarıyla okundu. Stok Kodu: {stok_kod}, Parti No: {parti_no}, Varyant: {varyant}'
+                'message': f'Veri başarıyla okundu. Seri No: {seri_no}, Stok Kodu: {stok_kod}, Parti No: {parti_no}, Varyant: {varyant}'
             })
 
         except APIError as e:
