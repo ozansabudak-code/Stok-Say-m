@@ -26,11 +26,13 @@
         <h2 style="color: darkred;">Emir: {{ sayim_emri.ad }} (ID: {{ sayim_emri.pk }})</h2>
 
         <div id="message-box" class="info-box"></div>
+        
+        <input type="hidden" id="id_seri_no" name="seri_no" value="">
 
         <form id="sayim-form">
             {% csrf_token %}
             
-            <label for="id_stok_kod">1. Stok Kodu (**ENTER**)</label>
+            <label for="id_stok_kod">1. Stok Kodu (**ENTER** veya Kamera)</label>
             <input type="text" id="id_stok_kod" name="stok_kod" required autofocus>
 
             {% if gemini_available %}
@@ -47,13 +49,11 @@
 
             <label for="id_parti_no">2. Parti No (Seçim / Opsiyonel)</label>
             <input type="text" id="id_parti_no" name="parti_no" list="parti-datalist">
-            <datalist id="parti-datalist">
-            </datalist>
+            <datalist id="parti-datalist"></datalist>
             
             <label for="id_renk">3. Renk / Varyant (Seçim / Opsiyonel)</label>
             <input type="text" id="id_renk" name="renk" list="renk-datalist">
-            <datalist id="renk-datalist">
-            </datalist>
+            <datalist id="renk-datalist"></datalist>
 
             <div id="last-sayim-label" class="info-box">Son Sayım: Bilinmiyor</div>
             
@@ -80,11 +80,14 @@
     const CSRF_TOKEN = document.querySelector('[name=csrfmiddlewaretoken]').value;
     let debounceTimeout = null;
 
-    // Yeni tanımlamalar (Gemini)
+    // YENİ ELEMANLAR
     const geminiCameraBtn = document.getElementById('gemini-camera-btn');
     const geminiFileSelectBtn = document.getElementById('gemini-file-select-btn');
     const geminiFileInput = document.getElementById('gemini-file-input');
+    const seriNoInput = document.getElementById('id_seri_no'); // Yeni gizli Seri No alanı
 
+    // YENİ URL
+    const AKILLI_ARAMA_URL = "{% url 'ajax_akilli_stok_ara' %}"; 
 
     // Helper: Datalist doldurma
     function fillDatalist(datalistId, options) {
@@ -98,75 +101,97 @@
         });
     }
 
-    // Helper: AJAX ile varyant ve bilgi çekme
+    // --- AKILLI ARAMA FONKSİYONU GÜNCELLENDİ (Seri No Öncelikli) ---
     function fetchStokInfo(triggerFocus = true) {
         const stokKod = stokKodInput.value;
-        const partiNo = partiNoInput.value || ''; 
-        const renk = renkInput.value || ''; 
+        const partiNo = partiNoInput.value || '';
+        const renk = renkInput.value || '';
+        const seriNo = seriNoInput.value || ''; // Gizli Seri No alanını kullan
 
-        if (stokKod.length < 3) {
-            urunBilgiLabel.textContent = 'Ürün Bilgisi: Kodu Girin...';
+        if (stokKod.length < 3 && seriNo.length < 3) {
+            urunBilgiLabel.textContent = 'Ürün Bilgisi: Kodu veya Seri No girin...';
             lastSayimLabel.textContent = 'Son Sayım: Bilinmiyor';
             return;
         }
+        
+        // Tüm parametreleri akıllı arama endpoint'ine gönder
+        const params = new URLSearchParams({
+            stok_kod: stokKod,
+            parti_no: partiNo,
+            renk: renk,
+            seri_no: seriNo,
+            depo_kod: DEPO_KODU
+        });
 
-        const url = `{% url 'ajax_stok_ara' %}?stok_kod=${stokKod}&parti_no=${partiNo}&renk=${renk}&depo_kod=${DEPO_KODU}`;
-
-        fetch(url)
+        // AKILLI ARAMA endpoint'ini çağır
+        fetch(`${AKILLI_ARAMA_URL}?${params.toString()}`)
             .then(response => response.json())
             .then(data => {
-                const currentParti = partiNoInput.value || 'YOK';
-                const currentRenk = renkInput.value || 'YOK';
+                if (data.found) {
+                    // Seri No veya Parti/Varyant ile bulundu
+                    
+                    // Alanları veritabanından dönen kesin verilerle doldur
+                    stokKodInput.value = data.stok_kod;
+                    partiNoInput.value = data.parti_no;
+                    renkInput.value = data.renk;
+                    
+                    // Seri No ile bulunduğu için datalist'leri temizle
+                    fillDatalist('parti-datalist', []);
+                    fillDatalist('renk-datalist', []);
+                    
+                    urunBilgiLabel.textContent = `✅ ${data.urun_bilgi}`;
+                    lastSayimLabel.textContent = data.last_sayim ? `Son Sayım: ${data.last_sayim}` : 'Son Sayım: Hiç Sayılmadı';
 
-                fillDatalist('parti-datalist', data.parti_varyantlar);
-                fillDatalist('renk-datalist', data.renk_varyantlar);
-
-                urunBilgiLabel.textContent = data.urun_bilgi;
-                lastSayimLabel.textContent = data.last_sayim ? `Son Sayım: ${data.last_sayim}` : 'Son Sayım: Hiç Sayılmadı';
-
-                if (triggerFocus) {
-                    const hasPartiVaryant = data.parti_varyantlar.some(v => v !== 'YOK');
-                    const hasRenkVaryant = data.renk_varyantlar.some(v => v !== 'YOK');
-
-                    if (hasPartiVaryant && (currentParti === 'YOK' || currentParti === '')) {
-                        partiNoInput.focus();
-                    } else if (hasRenkVaryant && (currentRenk === 'YOK' || currentRenk === '')) {
-                        renkInput.focus();
-                    } else {
+                    if (triggerFocus) {
                         miktarInput.focus();
+                    }
+                    
+                } else {
+                    // Seri No/Tam Eşleşme bulunamadı, sadece Stok Kodu ile varyantlar döndü
+                    
+                    fillDatalist('parti-datalist', data.parti_varyantlar);
+                    fillDatalist('renk-datalist', data.renk_varyantlar);
+
+                    urunBilgiLabel.textContent = `⚠️ ${data.urun_bilgi}`;
+                    lastSayimLabel.textContent = 'Son Sayım: Bilinmiyor';
+                    
+                    if (triggerFocus) {
+                        // Odaklanma mantığı aynı kalır
+                        const hasPartiVaryant = data.parti_varyantlar.some(v => v !== 'YOK');
+                        const hasRenkVaryant = data.renk_varyantlar.some(v => v !== 'YOK');
+                        if (hasPartiVaryant && (partiNoInput.value === 'YOK' || partiNoInput.value === '')) {
+                            partiNoInput.focus();
+                        } else if (hasRenkVaryant && (renkInput.value === 'YOK' || renkInput.value === '')) {
+                            renkInput.focus();
+                        } else {
+                            miktarInput.focus();
+                        }
                     }
                 }
             })
             .catch(error => {
-                console.error('Stok arama hatası:', error);
+                console.error('Akıllı Stok arama hatası:', error);
                 urunBilgiLabel.textContent = 'HATA: Stok bilgisi çekilemedi.';
             });
     }
 
-    // --- GEMINI İŞLEME MANTIĞI ---
+    // --- GEMINI İŞLEME MANTIĞI GÜNCELLENDİ ---
     if (geminiCameraBtn && geminiFileSelectBtn) {
-        // Personel Kontrolü (MISAFIR ise engelle)
         const checkUser = () => {
             if (document.getElementById('personel-adi').innerText === 'MISAFIR') {
-                 alert("Lütfen oturumu personel adınızla başlatın.");
-                 return false;
+                alert("Lütfen oturumu personel adınızla başlatın.");
+                return false;
             }
             return true;
         };
-
-        // 1. KAMERA Butonuna Tıklandığında
         geminiCameraBtn.addEventListener('click', () => {
             if (!checkUser()) return;
-            // KRİTİK: Kamera açılmasını sağlar
             geminiFileInput.setAttribute('capture', 'environment');
             geminiFileInput.click();
         });
-
-        // 2. DOSYADAN SEÇ Butonuna Tıklandığında
         geminiFileSelectBtn.addEventListener('click', () => {
             if (!checkUser()) return;
-            // Varsayılan dosya seçimine dönülmesini sağlar
-            geminiFileInput.removeAttribute('capture'); 
+            geminiFileInput.removeAttribute('capture');
             geminiFileInput.click();
         });
     }
@@ -178,6 +203,12 @@
             messageBox.style.display = 'block';
             messageBox.className = 'info-box';
             messageBox.textContent = 'Görsel Yüklendi. Yapay Zekâ Analiz Ediyor...';
+            
+            // Tüm inputları ve gizli Seri No alanını temizle
+            stokKodInput.value = '';
+            partiNoInput.value = '';
+            renkInput.value = '';
+            seriNoInput.value = '';
 
             const formData = new FormData();
             formData.append('image', this.files[0]);
@@ -197,20 +228,19 @@
             })
             .then(data => {
                 messageBox.className = 'info-box success';
-                messageBox.textContent = `Gemini Başarılı: Parti No: ${data.parti_no}, Stok Kodu: ${data.stok_kod}`;
+                messageBox.textContent = `Gemini Başarılı: Seri No: ${data.seri_no || 'YOK'}, Stok Kodu: ${data.stok_kod || 'YOK'}`;
                 
-                if (data.stok_kod && data.stok_kod !== 'YOK') {
-                    stokKodInput.value = data.stok_kod;
-                    fetchStokInfo(false); 
-                }
-                if (data.parti_no && data.parti_no !== 'YOK') {
-                    partiNoInput.value = data.parti_no;
-                }
-                
-                if (data.stok_kod || data.parti_no) {
+                // Gemini'dan gelen veriyi form alanlarına ve gizli Seri No alanına ata.
+                seriNoInput.value = data.seri_no || '';
+                stokKodInput.value = data.stok_kod || '';
+                partiNoInput.value = data.parti_no || '';
+                renkInput.value = data.renk || '';
+
+                // Tüm veriler geldikten sonra AKILLI ARAMA'yı tetikle
+                if (data.seri_no || data.stok_kod) {
                     fetchStokInfo(true);
                 } else {
-                     stokKodInput.focus();
+                    stokKodInput.focus();
                 }
 
             })
@@ -225,22 +255,24 @@
     }
     // --- END GEMINI İŞLEME MANTIĞI ---
 
-    // Stok Kodu Değiştiğinde Varyantları Yükle (Debounce ile)
+    // Stok Kodu Değiştiğinde Akıllı Aramayı Yükle (Debounce ile)
     stokKodInput.addEventListener('input', () => {
         clearTimeout(debounceTimeout);
         debounceTimeout = setTimeout(() => fetchStokInfo(false), 300);
     });
     
-    // Enter basıldığında hemen varyantları yükle ve odaklanmayı ayarla
+    // Stok Kodu, Parti ve Renk inputlarında değişiklik olduğunda (ENTER veya manual giriş)
+    // AKILLI ARAMA'yı tetikle ve odaklanmayı ayarla
     stokKodInput.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') {
             e.preventDefault();
-            clearTimeout(debounceTimeout); 
+            clearTimeout(debounceTimeout);
+            // Manuel giriş varsa, Seri No'yu temizle ki Parti No devreye girsin.
+            seriNoInput.value = ''; 
             fetchStokInfo(true); 
         }
     });
 
-    // Parti ve Renk inputlarında değişiklik olduğunda bilgi etiketini güncelle
     partiNoInput.addEventListener('input', () => fetchStokInfo(false));
     renkInput.addEventListener('input', () => fetchStokInfo(false));
     
@@ -300,7 +332,7 @@
         .then(response => {
              if (!response.ok) {
                  return response.json().then(errorData => {
-                    throw new Error(errorData.message || response.statusText);
+                     throw new Error(errorData.message || response.statusText);
                  });
             }
             return response.json();
@@ -310,12 +342,15 @@
                 messageBox.className = 'info-box success';
                 messageBox.textContent = `BAŞARILI! ${data.message} (Sistem: ${data.sistem_stok}, Sayılan: ${data.yeni_miktar})`;
                 
+                // Formu temizle ve bir sonraki sayıma hazırla
                 stokKodInput.value = '';
                 miktarInput.value = '';
                 partiNoInput.value = ''; 
                 renkInput.value = '';     
+                seriNoInput.value = ''; // Gizli Seri No'yu da temizle
                 stokKodInput.focus();
                 
+                // Yeni boş stok kodu için bilgiyi güncelle
                 setTimeout(() => fetchStokInfo(false), 500); 
 
             } else if (data.action === 'NEW_STOCK') {

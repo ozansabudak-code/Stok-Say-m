@@ -1,14 +1,14 @@
 from django.db import models
-from django.utils import timezone # Zaman damgaları için gerekli
+from django.utils import timezone 
 
 # --- MERKEZİ ID TEMİZLEME VE OLUŞTURMA FONKSİYONLARI ---
 
 def standardize_id_part(value):
     """
-    ID'yi oluşturan bir parçayı temizler ve standartlaştırır.
+    ID'yi oluşturan bir parçayı temizler ve standartlaştırır (Büyük harf, YOK kontrolü).
     """
     cleaned = str(value).strip().upper()
-    if not cleaned or cleaned in ('NAN', 'NONE', 'NULL'):
+    if not cleaned or cleaned in ('NAN', 'NONE', 'NULL', 'NA'):
         return 'YOK'
     return cleaned
 
@@ -26,19 +26,27 @@ def generate_unique_id(stok_kod, parti_no, lokasyon_kod, renk):
 # --------------------------------------------------------
 
 class Malzeme(models.Model):
+    # Ana Benzersiz Tanımlayıcı
     benzersiz_id = models.CharField(max_length=255, unique=True, db_index=True, editable=False)
     
+    # Yeni Eklenen Alan: Seri No (Akıllı arama için öncelikli anahtar)
+    seri_no = models.CharField(max_length=100, null=True, blank=True, default='YOK', db_index=True)
+    
+    # Stok Tanımlama Alanları
     malzeme_kodu = models.CharField(max_length=100)
     parti_no = models.CharField(max_length=100, null=True, blank=True, default='YOK')
     lokasyon_kodu = models.CharField(max_length=100, default='YOK')
+    renk = models.CharField(max_length=50, null=True, blank=True, default='YOK')
+    
+    # Açıklayıcı Alanlar
     depo_adi = models.CharField(max_length=100, null=True, blank=True)
     stok_grup = models.CharField(max_length=100, null=True, blank=True)
     depo_sinif = models.CharField(max_length=100, null=True, blank=True)
     malzeme_adi = models.CharField(max_length=255)
     barkod = models.CharField(max_length=100, null=True, blank=True)
     olcu_birimi = models.CharField(max_length=20)
-    renk = models.CharField(max_length=50, null=True, blank=True, default='YOK')
     
+    # Stok/Finansal Alanlar
     sistem_stogu = models.FloatField(default=0.0)
     sistem_tutari = models.FloatField(default=0.0)
     birim_fiyat = models.FloatField(default=0.0)
