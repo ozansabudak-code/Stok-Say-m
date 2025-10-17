@@ -9,7 +9,7 @@ urlpatterns = [
     path('yeni/', views.SayimEmriCreateView.as_view(), name='yeni_sayim_emri'),
     
     # 2. PERSONEL GİRİŞİ VE SAYIM
-    path('login-personel/<int:sayim_emri_id>/<str:depo_kodu>/', views.PersonelLoginView.as_as_view(), name='personel_login'),
+    path('login-personel/<int:sayim_emri_id>/<str:depo_kodu>/', views.PersonelLoginView.as_view(), name='personel_login'),
     path('set-personel/', views.set_personel_session, name='set_personel_session'),
     path('depo-sec/<int:sayim_emri_id>/', views.DepoSecimView.as_view(), name='depo_secim'), 
     path('giris/<int:pk>/<str:depo_kodu>/', views.SayimGirisView.as_view(), name='sayim_giris'),
