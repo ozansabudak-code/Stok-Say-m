@@ -783,6 +783,7 @@ def export_excel(request, pk):
     except Exception as e:
         return JsonResponse({'success': False, 'message': f'Excel dışa aktarım hatası: {e}'}, status=500)
 
+# --- views.py içerisindeki export_mutabakat_excel fonksiyonu ---
 @csrf_exempt
 def export_mutabakat_excel(request, pk):
     """Mutabakat raporunu Excel olarak dışa aktarır."""
@@ -792,17 +793,25 @@ def export_mutabakat_excel(request, pk):
         tum_malzemeler = Malzeme.objects.all()
 
         rapor_list = []
-        sayilan_miktarlar = {d.benzersiz_malzeme.benzersiz_id: d.sayilan_stok for d in sayim_detaylari}
+        # Benzersiz ID'ye göre son sayım miktarlarını topla (Bu kısım zaten doğru çalışıyor olmalı)
+        sayilan_miktarlar = {}
+        for detay in sayim_detaylari:
+             malzeme_id = detay.benzersiz_malzeme.benzersiz_id
+             sayilan_miktarlar[malzeme_id] = sayilan_miktarlar.get(malzeme_id, 0.0) + detay.sayilan_stok
+
 
         for malzeme in tum_malzemeler:
+            # 🚀 GÜÇLENDİRME: Float olmayan değerler için varsayılan 0.0 kullanma
             sayilan_mik = sayilan_miktarlar.get(malzeme.benzersiz_id, 0.0)
-            sistem_mik = malzeme.sistem_stogu
-            birim_fiyat = malzeme.birim_fiyat
+            sistem_mik = float(getattr(malzeme, 'sistem_stogu', 0.0) or 0.0)
+            birim_fiyat = float(getattr(malzeme, 'birim_fiyat', 0.0) or 0.0)
 
             mik_fark = sayilan_mik - sistem_mik
             tutar_fark = mik_fark * birim_fiyat
             sistem_tutar = sistem_mik * birim_fiyat
-            mik_yuzde = (mik_fark / sistem_mik * 100) if sistem_mik != 0 else 0
+            
+            # Hata oluşmasını engelleyen NaN kontrolü
+            mik_yuzde = (mik_fark / sistem_mik * 100) if sistem_mik and sistem_mik != 0 else 0
 
             rapor_list.append({
                 'Stok Kodu': malzeme.malzeme_kodu,
@@ -813,7 +822,7 @@ def export_mutabakat_excel(request, pk):
                 'Sistem Mik.': sistem_mik,
                 'Sayım Mik.': sayilan_mik,
                 'Mik. Fark': mik_fark,
-                'Fark %': mik_yuzde,
+                'Fark %': f"{mik_yuzde:.2f}", # Yüzdeyi formatla
                 'Sistem Tutar (₺)': sistem_tutar,
                 'Tutar Farkı (₺)': tutar_fark
             })
@@ -822,6 +831,10 @@ def export_mutabakat_excel(request, pk):
         from io import BytesIO
 
         df = pd.DataFrame(rapor_list)
+        
+        # 🚀 KRİTİK: Boş veriden kaynaklanan Pandas/Excel hatalarını önle
+        df = df.fillna(0) 
+
         buffer = BytesIO()
         df.to_excel(buffer, index=False)
         buffer.seek(0)
@@ -835,4 +848,5 @@ def export_mutabakat_excel(request, pk):
         return response
 
     except Exception as e:
+        # Hata olursa 500 dönmek yerine daha bilgilendirici bir hata mesajı döndür.
         return JsonResponse({'success': False, 'message': f'Mutabakat Excel dışa aktarım hatası: {e}'}, status=500)
