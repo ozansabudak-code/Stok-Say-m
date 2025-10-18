@@ -4,8 +4,13 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Stok Sayım Girişi (Emir {{ sayim_emri.pk }})</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/quagga@0.12.1/dist/quagga.min.js"></script>
+
     <style>
-        /* ... CSS Kodları Aynı Kalır ... */
+        /* --------------------------------- */
+        /* TEMEL CSS VE YENİ BARKOD STİLLERİ */
+        /* --------------------------------- */
         body { font-family: 'Arial', sans-serif; background-color: #f0f2f5; margin: 0; padding: 20px; }
         .container { max-width: 600px; margin: auto; background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
         h1 { color: #007bff; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
@@ -18,6 +23,47 @@
         #message-box { margin-top: 15px; padding: 15px; border-radius: 6px; font-weight: bold; display: none; }
         .success { background-color: #d4edda; color: #155724; }
         .error { background-color: #f8d7da; color: #721c24; }
+        
+        /* BARKOD TARAYICI STİLLERİ */
+        #interactive.viewport {
+            position: relative;
+            margin-top: 15px;
+            width: 100%;
+            height: 300px; 
+            overflow: hidden;
+            border: 2px solid #007bff;
+            border-radius: 8px;
+            display: none; 
+        }
+
+        #interactive.viewport canvas, #interactive.viewport video {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            object-fit: cover; 
+        }
+
+        .barcode-overlay-info {
+            position: absolute;
+            bottom: 0;
+            width: 100%;
+            background: rgba(0, 123, 255, 0.8);
+            color: white;
+            padding: 5px;
+            text-align: center;
+            font-weight: bold;
+            z-index: 10;
+        }
+        #barcode-scanner-btn {
+            background-color: #007bff; /* Mavi */
+            color: white;
+            padding: 10px;
+            border: none;
+            border-radius: 6px;
+            flex-grow: 1;
+        }
     </style>
 </head>
 <body>
@@ -26,7 +72,6 @@
         <p>**PERSONEL**: <span id="personel-adi">{{ personel_adi }}</span> | **DEPO**: <span id="depo-kodu">{{ depo_kodu }}</span></p>
         <h2 style="color: darkred;">Emir: {{ sayim_emri.ad }} (ID: {{ sayim_emri.pk }})</h2>
 
-        <!-- RAPOR LİNKİ EKLENDİ (Önceki 404 sorununu çözmek için) -->
         <div style="margin-bottom: 20px;">
             <a href="{% url 'raporlama_onay' sayim_emri.pk %}" 
                style="background-color: #007bff; color: white; padding: 8px 15px; border-radius: 6px; text-decoration: none; display: inline-block;">
@@ -38,19 +83,29 @@
         
         <input type="hidden" id="id_seri_no" name="seri_no" value="">
 
+        <div style="margin-top: 20px;">
+            <button type="button" id="barcode-scanner-btn" style="width: 100%;">
+                ⚡ BARKOD/QR KOD TARAMAYI BAŞLAT
+            </button>
+        </div>
+
+        <div id="interactive" class="viewport">
+            <video style="width: 100%; height: 100%; object-fit: cover;" autoplay="true" preload="auto"></video>
+            <div class="barcode-overlay-info">Kamerayı Barkod/QR koda Tutun...</div>
+        </div>
         <form id="sayim-form">
             {% csrf_token %}
             
-            <label for="id_stok_kod">1. Stok Kodu (**ENTER** veya Kamera)</label>
+            <label for="id_stok_kod">1. Stok Kodu (**ENTER** veya Tarama Sonrası Otomatik Dolum)</label>
             <input type="text" id="id_stok_kod" name="stok_kod" required autofocus>
 
             {% if gemini_available %}
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
                     <button type="button" id="gemini-camera-btn" style="background-color: #6a0dad; color: white; padding: 10px; border: none; border-radius: 6px; flex-grow: 1;">
-                        📸 KAMERA İLE ÇEK
+                        📸 KAMERA İLE ÇEK (AI/OCR)
                     </button>
                     <button type="button" id="gemini-file-select-btn" style="background-color: #9400d3; color: white; padding: 10px; border: none; border-radius: 6px; flex-grow: 1;">
-                        📁 DOSYADAN SEÇ
+                        📁 DOSYADAN SEÇ (AI/OCR)
                     </button>
                 </div>
                 <input type="file" id="gemini-file-input" name="image" accept="image/*" style="display:none;">
@@ -94,9 +149,28 @@
     const geminiFileSelectBtn = document.getElementById('gemini-file-select-btn');
     const geminiFileInput = document.getElementById('gemini-file-input');
     const seriNoInput = document.getElementById('id_seri_no'); 
-
+    
     // YENİ URL
     const AKILLI_ARAMA_URL = "{% url 'ajax_akilli_stok_ara' %}"; 
+    
+    // --- BARKOD TARAYICI SABİTLERİ ---
+    const barcodeScannerBtn = document.getElementById('barcode-scanner-btn');
+    const interactive = document.getElementById('interactive');
+    let isScanning = false;
+    const SCANNER_CONFIG = {
+        inputStream: {
+            name: "Live",
+            type: "LiveStream",
+            target: interactive,
+            constraints: {
+                facingMode: "environment"
+            },
+        },
+        decoder: {
+            readers: ["code_128_reader", "qr_code_reader", "ean_reader", "ean_8_reader", "code_39_reader"]
+        },
+        locate: true,
+    };
 
     // Helper: Datalist doldurma
     function fillDatalist(datalistId, options) {
@@ -146,6 +220,7 @@
 
                     if (triggerFocus) {
                         miktarInput.focus();
+                        miktarInput.select(); // Miktarı otomatik seç
                     }
                     
                 } else {
@@ -173,6 +248,73 @@
                 urunBilgiLabel.textContent = 'HATA: Stok bilgisi çekilemedi.';
             });
     }
+    
+    // --- BARKOD TARAYICI LOGIC'İ (QuaggaJS) ---
+
+    barcodeScannerBtn.addEventListener('click', () => {
+        if (isScanning) {
+            stopScanner();
+        } else {
+            startScanner();
+        }
+    });
+
+    function startScanner() {
+        stopScanner(); // Önceki taramayı durdur
+        isScanning = true;
+        barcodeScannerBtn.textContent = '❌ TARAMAYI DURDUR';
+        barcodeScannerBtn.style.backgroundColor = '#dc3545';
+        interactive.style.display = 'block';
+        messageBox.style.display = 'block';
+        messageBox.className = 'info-box';
+        messageBox.textContent = 'Kamera Başlatılıyor. Lütfen izin verin.';
+
+        Quagga.init(SCANNER_CONFIG, function (err) {
+            if (err) {
+                messageBox.className = 'info-box error';
+                messageBox.textContent = `Barkod Başlatma Hatası: ${err.message}`;
+                stopScanner();
+                return;
+            }
+            Quagga.start();
+            messageBox.textContent = 'Tarama Aktif. Barkoda Odaklayın.';
+        });
+
+        Quagga.onDetected(function (data) {
+            if (data && data.codeResult && data.codeResult.code) {
+                const barkodVerisi = data.codeResult.code.toUpperCase().trim();
+
+                // Tüm alanları temizle
+                stokKodInput.value = '';
+                partiNoInput.value = '';
+                renkInput.value = '';
+
+                // Okunan veriyi Seri No olarak ata (Django'da Seri No aramasını önceliklendirir)
+                seriNoInput.value = barkodVerisi; 
+                
+                // Hızı korumak için tarayıcıyı durdur
+                stopScanner();
+
+                messageBox.className = 'info-box success';
+                messageBox.textContent = `✅ BARCODE OKUNDU: ${barkodVerisi}. Stok bilgisi getiriliyor...`;
+                
+                // Arama ve odaklama yap
+                fetchStokInfo(true); 
+            }
+        });
+    }
+
+    function stopScanner() {
+        if (isScanning) {
+            Quagga.stop();
+            isScanning = false;
+            barcodeScannerBtn.textContent = '⚡ BARKOD/QR KOD TARAMAYI BAŞLAT';
+            barcodeScannerBtn.style.backgroundColor = '#007bff';
+            interactive.style.display = 'none';
+            messageBox.style.display = 'none';
+        }
+    }
+
 
     // --- GEMINI VE FORMU TEMİZLEME MANTIĞI ---
     if (geminiCameraBtn && geminiFileSelectBtn) {
@@ -185,11 +327,15 @@
         };
         geminiCameraBtn.addEventListener('click', () => {
             if (!checkUser()) return;
+            // Tarama açıksa durdur
+            if (isScanning) stopScanner(); 
             geminiFileInput.setAttribute('capture', 'environment');
             geminiFileInput.click();
         });
         geminiFileSelectBtn.addEventListener('click', () => {
             if (!checkUser()) return;
+            // Tarama açıksa durdur
+            if (isScanning) stopScanner();
             geminiFileInput.removeAttribute('capture');
             geminiFileInput.click();
         });
@@ -256,6 +402,8 @@
     // --- FORM ETKİLEŞİMLERİ ---
     stokKodInput.addEventListener('input', () => {
         clearTimeout(debounceTimeout);
+        // Yazılı girişte taramayı durdur
+        if (isScanning) stopScanner(); 
         debounceTimeout = setTimeout(() => fetchStokInfo(false), 300);
     });
     
@@ -263,6 +411,7 @@
         if (e.key === 'Enter') {
             e.preventDefault();
             clearTimeout(debounceTimeout);
+            // Manuel Enter'da Seri No'yu temizle
             seriNoInput.value = ''; 
             fetchStokInfo(true); 
         }
@@ -285,21 +434,22 @@
     });
     
 
-    // --- KAYDETME (SUBMIT) İŞLEMİ ---
+    // --- KAYDETME (SUBMIT) İŞLEMİ (Tek Tıkla Kaydetme Revizyonu) ---
     form.addEventListener('submit', function(e) {
         e.preventDefault();
         const miktar = miktarInput.value;
         
-        if (!stokKodInput.value || !miktar) {
-            // NOTE: Daha önce alert yerine confirm kullanmıştınız. Alert daha az yıkıcıdır.
-            if (!confirm('Stok Kodu ve Miktar alanları boş bırakılamaz.')) return; 
+        // 1. KESİN KONTROL: Stok Kodu ve Miktar boş olmamalı.
+        if (!stokKodInput.value || miktar.trim() === '') {
+            messageBox.style.display = 'block';
+            messageBox.className = 'info-box error';
+            messageBox.textContent = 'HATA: Lütfen Stok Kodu ve Miktarı girin.';
+            stokKodInput.focus();
+            return; 
         }
         
-        // NOTE: Confirm yerine özel bir modal UI kullanılması daha iyi olur.
-        if (!confirm(`Stok Kodu: ${stokKodInput.value}\nMiktar: ${miktar}\nKaydı onaylıyor musunuz?`)) {
-             return; 
-        }
-
+        // ⚠️ KRİTİK REVİZYON: Onay pencereleri kaldırıldı. Doğrudan kayda geçiliyor.
+        
         const finalParti = partiNoInput.value.trim() === '' ? 'YOK' : partiNoInput.value;
         const finalRenk = renkInput.value.trim() === '' ? 'YOK' : renkInput.value;
 
@@ -316,6 +466,9 @@
         messageBox.className = 'info-box';
         messageBox.textContent = 'Kaydediliyor... Lütfen Bekleyin...';
         
+        // Tarayıcı açıksa durdur
+        stopScanner();
+
         fetch(`/ajax/kaydet/${SAYIM_EMRI_ID}/`, {
             method: 'POST',
             headers: {
@@ -325,10 +478,10 @@
             body: JSON.stringify(payload)
         })
         .then(response => {
-             if (!response.ok) {
-                 return response.json().then(errorData => {
-                     throw new Error(errorData.message || response.statusText);
-                 });
+            if (!response.ok) {
+                return response.json().then(errorData => {
+                    throw new Error(errorData.message || response.statusText);
+                });
             }
             return response.json();
         })
@@ -337,27 +490,27 @@
                 messageBox.className = 'info-box success';
                 messageBox.textContent = `BAŞARILI! ${data.message} (Sistem: ${data.sistem_stok}, Sayılan: ${data.yeni_miktar})`;
                 
+                // Kayıt başarılıysa tüm alanları SIFIRLA
                 stokKodInput.value = '';
                 miktarInput.value = '';
-                partiNoInput.value = ''; 
-                renkInput.value = '';     
+                partiNoInput.value = '';   
+                renkInput.value = '';      
                 seriNoInput.value = ''; 
-                stokKodInput.focus();
                 
-                setTimeout(() => fetchStokInfo(false), 500); 
-
-            } else if (data.action === 'NEW_STOCK') {
-                 messageBox.className = 'info-box error';
-                 messageBox.textContent = data.message + ' Manuel Giriş gerekiyor!';
-                 stokKodInput.focus();
-                 
             } else {
+                // Sunucudan gelen özel hata mesajlarını göster
                 throw new Error(data.message || 'Bilinmeyen Kayıt Hatası');
             }
         })
         .catch(error => {
             messageBox.className = 'info-box error';
             messageBox.textContent = `Kayıt Hatası: ${error.message}`;
+        })
+        .finally(() => {
+            // İşlem bittikten sonra daima Stok Kodu/Tarama alanına geri dön
+            stokKodInput.focus();
+            // Yeni odaklama sonrası arka plan bilgisini güncelle (tutarlılık için)
+            setTimeout(() => fetchStokInfo(false), 500); 
         });
     });
 

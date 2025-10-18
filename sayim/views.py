@@ -14,8 +14,9 @@ from django.views import View
 from django.views.decorators.csrf import csrf_exempt
 from django.views.generic import ListView, CreateView, DetailView, TemplateView
 from django.urls import reverse_lazy
+# F ifadesini kullanabilmek için F eklendi
 from django.db import connection, transaction
-from django.db.models import Max
+from django.db.models import Max, F # <--- F BURAYA EKLENDİ
 from django.utils import timezone
 from django.core.management import call_command
 
@@ -35,7 +36,7 @@ from google.genai.errors import APIError
 from .models import SayimEmri, Malzeme, SayimDetay, standardize_id_part, generate_unique_id
 from .forms import SayimGirisForm
 
-# --- GEMINI SABİTLERİ ---
+# --- GEMINI SABİTLERİ (DEĞİŞMEDİ) ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 try:
@@ -51,7 +52,7 @@ except Exception:
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
-# --- GÖRÜNÜMLER (VIEWS) ---
+# --- GÖRÜNÜMLER (VIEWS) (DEĞİŞMEDİ) ---
 class SayimEmirleriListView(ListView):
     model = SayimEmri
     template_name = 'sayim/sayim_emirleri.html'
@@ -116,7 +117,7 @@ class SayimGirisView(DetailView):
         context['gemini_available'] = GEMINI_AVAILABLE
         context['form'] = SayimGirisForm()
         return context
-# --- RAPORLAMA, ONAY VE ANALİZ VIEW'LARI ---
+# --- RAPORLAMA, ONAY VE ANALİZ VIEW'LARI (DEĞİŞMEDİ) ---
 
 class RaporlamaView(DetailView):
     model = SayimEmri
@@ -239,7 +240,7 @@ class PerformansAnaliziView(DetailView):
                 if item['ortalama_sure_sn'] == float('inf'):
                     item['ortalama_sure_sn'] = '0.00'
                 else:
-                     item['ortalama_sure_sn'] = f"{item['ortalama_sure_sn']:.2f}"
+                    item['ortalama_sure_sn'] = f"{item['ortalama_sure_sn']:.2f}"
 
             context['analiz_data'] = analiz_list
 
@@ -333,7 +334,7 @@ def stoklari_onayla_ve_kapat(request, pk):
             malzeme_id = detay.benzersiz_malzeme.benzersiz_id
             # NOTE: Bu kısımda, en son sayılan miktarı alıp üzerine yazmak yerine,
             # Malzeme/Emir bazında toplanan miktarı alıyoruz.
-            latest_counts[malzeme_id] = latest_counts.get(malzeme_id, 0.0) + detay.sayilan_stok 
+            latest_counts[malzeme_id] = latest_counts.get(malzeme_id, 0.0) + detay.sayilan_stok
 
 
         for benzersiz_id, yeni_stok in latest_counts.items():
@@ -353,7 +354,7 @@ def stoklari_onayla_ve_kapat(request, pk):
             'sayim_emri': sayim_emri,
             'hata': f"Stok güncelleme sırasında kritik hata oluştu: {e}"
         })
-# --- YÖNETİM ARAÇLARI ---
+# --- YÖNETİM ARAÇLARI (DEĞİŞMEDİ) ---
 
 def yonetim_araclari(request):
     """Veri temizleme ve yükleme araçları sayfasını gösterir."""
@@ -392,7 +393,7 @@ def reload_stok_data_from_excel(request):
             return JsonResponse({'success': False, 'message': f'Stok yüklenirken hata oluştu: {e}'})
 
     return JsonResponse({'success': False, 'message': 'Geçersiz metot.'}, status=400)
-# --- AJAX / Yardımcı Fonksiyonlar ---
+# --- AJAX / Yardımcı Fonksiyonlar (DEĞİŞMEDİ) ---
 
 def get_last_sayim_info(benzersiz_id):
     """Verilen benzersiz ID'ye ait son sayım bilgisini çeker."""
@@ -409,20 +410,19 @@ def get_last_sayim_info(benzersiz_id):
     return None
 
 # ####################################################################################
-# YENİ AKILLI ARAMA FONKSİYONU - ESKİ ajax_stok_ara'nın YERİNİ ALIR
+# ⭐ OPTİMİZE EDİLMİŞ AKILLI ARAMA FONKSİYONU (Tek Sorgu ile Varyant Listeleme)
 # ####################################################################################
 
 @csrf_exempt
 def ajax_akilli_stok_ara(request):
     """
-    AJAX ile akıllı arama yapar (Seri No öncelikli, Parti No yedekli).
-    Eski ajax_stok_ara'nın yerine geçer.
+    AJAX ile akıllı arama yapar (Seri No öncelikli, Parti No yedekli, optimize edilmiş varyant listeleme).
     """
     if request.method != 'GET':
         return JsonResponse({'success': False, 'message': 'Geçersiz metot.'}, status=400)
     
     # Giriş parametrelerini al
-    seri_no_raw = request.GET.get('seri_no', '') # Yeni alan
+    seri_no_raw = request.GET.get('seri_no', '')
     stok_kod_raw = request.GET.get('stok_kod', '')
     parti_no_raw = request.GET.get('parti_no', '')
     renk_raw = request.GET.get('renk', '')
@@ -449,16 +449,16 @@ def ajax_akilli_stok_ara(request):
     malzeme = None
     
     # --- 1. Öncelik: Seri No Arama (Seri No varsa) ---
-    # Malzeme modelinde 'seri_no' alanı olması ZORUNLUDUR.
     if seri_no != 'YOK' and len(seri_no) >= 3:
         try:
+            # Seri No aramasında tam eşleşme arıyoruz
             malzeme = Malzeme.objects.filter(
                 seri_no=seri_no, 
                 lokasyon_kodu=depo_kod_s
             ).first()
 
             if malzeme:
-                # Seri No ile bulundu, Stok Kodu, Parti ve Renk bilgileri güncellenir.
+                # Seri No ile bulundu, Tam eşleşme olduğundan hemen dönüyoruz.
                 response_data['found'] = True
                 response_data['stok_kod'] = malzeme.malzeme_kodu
                 response_data['parti_no'] = malzeme.parti_no
@@ -470,9 +470,9 @@ def ajax_akilli_stok_ara(request):
                     response_data['last_sayim'] = f"{last_sayim_info['tarih']} - {last_sayim_info['personel']}"
                 
                 return JsonResponse(response_data)
-        except Exception as e:
-            # Seri No aramasında bir hata olursa (ör. seri_no alanı yoksa) loglama yapılabilir.
-            pass # Parti No arayışına devam et
+        except Exception:
+            # Seri No aramasında bir hata olursa (ör. seri_no alanı yoksa veya veritabanı hatası)
+            pass 
 
     # --- 2. Öncelik: Parti No / Tam Eşleşme Arama (Seri No başarısız olduysa) ---
     if stok_kod != 'YOK' and parti_no != 'YOK' and renk != 'YOK':
@@ -491,27 +491,52 @@ def ajax_akilli_stok_ara(request):
             return JsonResponse(response_data)
 
 
-    # --- 3. Öncelik: Stok Kodu Bazlı Varyant Listeleme (Hiçbir eşleşme yoksa) ---
+    # --- 3. Öncelik: Stok Kodu Bazlı Varyant Listeleme (Hız Optimizasyonu) ---
+    # Eğer Seri No veya Tam Eşleşme bulunamadıysa, Stok Koduna ait varyantları listeleriz.
     if stok_kod != 'YOK' and len(stok_kod) >= 3:
-        filtre = {'malzeme_kodu': stok_kod, 'lokasyon_kodu': depo_kod_s}
         
-        parti_varyantlar = Malzeme.objects.filter(**filtre).values_list('parti_no', flat=True).distinct()
-        renk_varyantlar = Malzeme.objects.filter(**filtre).values_list('renk', flat=True).distinct()
+        # ⭐ OPTİMİZASYON: Parti No ve Renk listesini tek sorguda çekme
+        try:
+            varyant_data = Malzeme.objects.filter(
+                malzeme_kodu=stok_kod, 
+                lokasyon_kodu=depo_kod_s
+            ).values('parti_no', 'renk').distinct() # Tek sorgu ile hem parti hem renk çekilir
+        except Exception as e:
+            # Kritik DB hatası durumunda loglama yapılabilir.
+            print(f"Varyant Listesi Çekme Hatası: {e}")
+            varyant_data = []
+
+        parti_set = set()
+        renk_set = set()
         
-        response_data['parti_varyantlar'] = sorted(list(set(list(parti_varyantlar))))
-        response_data['renk_varyantlar'] = sorted(list(set(list(renk_varyantlar))))
+        # Python tarafında set'lere ayırma (Çok hızlı)
+        for item in varyant_data:
+            if item.get('parti_no'):
+                parti_set.add(item['parti_no'])
+            if item.get('renk'):
+                renk_set.add(item['renk'])
+
+        # Sonuçları hazırlama
+        parti_varyantlar = sorted(list(parti_set))
+        renk_varyantlar = sorted(list(renk_set))
+        
+        response_data['parti_varyantlar'] = parti_varyantlar
+        response_data['renk_varyantlar'] = renk_varyantlar
         response_data['urun_bilgi'] = "Seri/Parti eşleşmedi. Stok koduna ait varyantlar listelendi. Yeni stok olabilir."
 
 
     return JsonResponse(response_data)
 
 # ####################################################################################
-# ajax_sayim_kaydet fonksiyonu aynı kalır
+# ⭐ KRİTİK REVİZYON: ajax_sayim_kaydet (Atomik Miktar Ekleme)
 # ####################################################################################
 
 @csrf_exempt
 def ajax_sayim_kaydet(request, sayim_emri_id):
-    """AJAX ile sayım miktarını kaydeder; yeni stokları otomatik ekler ve mevcut miktarın üzerine ekler."""
+    """
+    AJAX ile sayım miktarını kaydeder; yeni stokları otomatik ekler ve mevcut miktarın üzerine atomik olarak ekler.
+    (Race Condition'ları önlemek için F ifadeleri kullanıldı.)
+    """
     if request.method == 'POST':
         start_time = time.time()
         depo_kod_s = 'YOK'
@@ -554,7 +579,6 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
                     sistem_stogu=0.0,
                     birim_fiyat=0.0,
                     benzersiz_id=benzersiz_id
-                    # Seri No burada otomatik olarak boş veya 'YOK' kalacaktır.
                 )
 
             mevcut_kayit, created = SayimDetay.objects.get_or_create(
@@ -563,13 +587,29 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
                 defaults={'sayilan_stok': 0.0, 'personel_adi': personel_adi}
             )
 
-            yeni_toplam_miktar = mevcut_kayit.sayilan_stok + miktar
-            mevcut_kayit.sayilan_stok = yeni_toplam_miktar
-            mevcut_kayit.saniye_stamp = time.time() - start_time
-            mevcut_kayit.personel_adi = personel_adi
-            mevcut_kayit.save()
+            # Atomik Miktar Ekleme: Veritabanı seviyesinde toplama yapar, Race Condition'ı önler
+            if created:
+                # Yeni oluşturulduysa, miktarı direk atar
+                mevcut_kayit.sayilan_stok = miktar
+                mevcut_kayit.saniye_stamp = time.time() - start_time
+                mevcut_kayit.personel_adi = personel_adi
+                mevcut_kayit.save()
+            else:
+                # Mevcutsa F() ile miktarın üzerine ekler (Atomik işlem)
+                SayimDetay.objects.filter(pk=mevcut_kayit.pk).update(
+                    sayilan_stok=F('sayilan_stok') + miktar,
+                    guncellenme_tarihi=timezone.now(), # Güncelleme tarihini manuel olarak ayarla
+                    saniye_stamp=time.time() - start_time,
+                    personel_adi=personel_adi
+                )
+                # Güncel toplam miktarı alabilmek için kaydı DB'den tazeler
+                mevcut_kayit.refresh_from_db()
+
+            yeni_toplam_miktar = mevcut_kayit.sayilan_stok # Artık atomik olarak güncel değerimiz var
 
             fark = yeni_toplam_miktar - malzeme.sistem_stogu
+            
+            # --- Hız Hesaplama (Ekstra sorgu, ancak performansa büyük etkisi yok) ---
             try:
                 son_kayit_tarihi = SayimDetay.objects.filter(
                     sayim_emri_id=sayim_emri_id,
@@ -602,7 +642,7 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
             return JsonResponse({'success': False, 'message': f'Beklenmedik bir hata oluştu: {e}'}, status=500)
 
 # ####################################################################################
-# gemini_parti_oku fonksiyonu Seri No'yu okuyacak şekilde güncellendi
+# gemini_parti_oku ve Raporlama Fonksiyonları (DEĞİŞMEDİ)
 # ####################################################################################
 
 @csrf_exempt
@@ -783,7 +823,7 @@ def export_excel(request, pk):
     except Exception as e:
         return JsonResponse({'success': False, 'message': f'Excel dışa aktarım hatası: {e}'}, status=500)
 
-# --- views.py içerisindeki export_mutabakat_excel fonksiyonu ---
+# --- views.py içerisindeki export_mutabakat_excel fonksiyonu (DEĞİŞMEDİ) ---
 @csrf_exempt
 def export_mutabakat_excel(request, pk):
     """Mutabakat raporunu Excel olarak dışa aktarır."""
