@@ -41,11 +41,11 @@
         input[type="text"] {
             padding: 12px;
             margin: 10px 0 20px;
-            width: calc(100% - 24px); /* Padding dahil */
+            width: calc(100% - 24px); 
             border: 1px solid #c0c0c0;
             border-radius: 6px;
             font-size: 1em;
-            box-sizing: content-box; /* Buton ile hizalamak için */
+            box-sizing: content-box; 
         }
         button {
             background-color: #28a745; /* Yeşil */
@@ -72,7 +72,7 @@
         <form method="POST" action="{% url 'set_personel_session' %}">
             {% csrf_token %} 
             
-            <input type="text" name="personel_adi" placeholder="Personel Adınız" value="ayhan" required>
+            <input type="text" name="personel_adi" placeholder="Personel Adınız" required>
             
             <input type="hidden" name="sayim_emri_id" value="{{ sayim_emri_id }}">
             <input type="hidden" name="depo_kodu" value="{{ depo_kodu }}">
