@@ -9,7 +9,7 @@
     <style>
         /* CSS Düzeltilene Kadar Geçici Stil */
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
-        input[type="text"], input[type="number"], button { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; }
+        input[type="text"], input[type="number"], button, select { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; }
         .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; }
         .message.success { color: green; }
         .message.error { color: red; }
@@ -32,9 +32,7 @@
     
     <div class="info-box">
         <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
-        
         <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
-        
         <button id="quick-scan-btn" style="background-color: #007bff; color: white; margin-top: 5px;">
             📸 QR/Barkod Tarayıcıyı Aç
         </button>
@@ -49,7 +47,6 @@
         
         <div class="flex-container">
             <button id="camera-btn" style="background-color: #556B2F; color: white;">📷 Kamera ile Çek</button>
-            
             <input type="file" id="image-input" accept="image/*" style="display: none;">
             <button id="select-file-btn" style="background-color: #8A2BE2; color: white;">📂 Dosyadan Seç</button>
         </div>
@@ -58,11 +55,17 @@
     
     <hr>
 
-    <h3>Veya Detaylı Giriş</h3>
+    <h3 class="section-header">Veya Detaylı Giriş</h3>
     
-    <input type="text" id="stok_kod_input" placeholder="Stok Kodu">
-    <input type="text" id="parti_no_input" placeholder="Parti No (Opsiyonel)">
-    <input type="text" id="renk_input" placeholder="Renk/Varyant (Opsiyonel)">
+    <div id="stok_kod_container">
+        <input type="text" id="stok_kod_input" placeholder="Stok Kodu">
+    </div>
+    <div id="parti_no_container">
+        <input type="text" id="parti_no_input" placeholder="Parti No (Opsiyonel)">
+    </div>
+    <div id="renk_container">
+        <input type="text" id="renk_input" placeholder="Renk/Varyant (Opsiyonel)">
+    </div>
     <button id="ara-btn">Stok Ara</button>
 
     <div id="urun_bilgi_alani" style="margin-top: 15px;">
@@ -96,6 +99,10 @@
     const ocrStatus = document.getElementById('ocr_status');
     const scannerContainer = document.getElementById('scanner-container');
     
+    const stokKodContainer = document.getElementById('stok_kod_container');
+    const partiNoContainer = document.getElementById('parti_no_container');
+    const renkContainer = document.getElementById('renk_container');
+
     let currentStokKod = '';
     let currentPartiNo = 'YOK';
     let currentRenk = 'YOK';
@@ -119,6 +126,30 @@
     const CSRF_TOKEN = getCookie('csrftoken');
 
 
+    // --- YENİ: VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
+    function updateVariantInputs(data) {
+        // Dropdown'ları temizle ve input'a dönüştür
+        const createInput = (id, placeholder, value) => 
+            `<input type="text" id="${id}" placeholder="${placeholder}" value="${value}">`;
+
+        // 1. Parti No için
+        if (data.parti_varyantlar && data.parti_varyantlar.length > 0) {
+            let options = data.parti_varyantlar.map(p => `<option value="${p}">${p}</option>`).join('');
+            partiNoContainer.innerHTML = `<select id="parti_no_input">${options}</select>`;
+        } else {
+            partiNoContainer.innerHTML = createInput('parti_no_input', 'Parti No (Opsiyonel)', data.parti_no || '');
+        }
+
+        // 2. Renk/Varyant için
+        if (data.renk_varyantlar && data.renk_varyantlar.length > 0) {
+            let options = data.renk_varyantlar.map(r => `<option value="${r}">${r}</option>`).join('');
+            renkContainer.innerHTML = `<select id="renk_input">${options}</select>`;
+        } else {
+            renkContainer.innerHTML = createInput('renk_input', 'Renk/Varyant (Opsiyonel)', data.renk || '');
+        }
+    }
+
+
     // --- HİBRİT ARAMA FONKSİYONU (views.py'ı çağırır) ---
     function akilliStokAra(seriNo, stokKod, partiNo, renk, depoKod, barkodHamVeri = '') {
         document.getElementById('urun_bilgi').innerText = 'Arama yapılıyor...';
@@ -137,7 +168,6 @@
 
         fetch(`/ajax/stok-ara-akilli/?${params.toString()}`)
             .then(response => {
-                // Sunucudan (views.py) gelen yanıt JSON değilse, bu bir sunucu hatasıdır
                 if (!response.ok) {
                     throw new Error(`Sunucu Hatası (${response.status}). Yanıt JSON değil.`);
                 }
@@ -148,7 +178,7 @@
                 document.getElementById('last_sayim_goster').innerText = data.last_sayim;
                 
                 if (data.found) {
-                    // Tam eşleşme bulundu
+                    // Tam eşleşme bulundu: Input alanlarını bulgularla güncelle
                     currentStokKod = data.stok_kod;
                     currentPartiNo = data.parti_no;
                     currentRenk = data.renk;
@@ -159,12 +189,27 @@
                     renkInput.value = data.renk;
                     document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
 
+                    // Eğer önceden dropdown varsa, tekrar input'a döner
+                    updateVariantInputs({ parti_no: data.parti_no, renk: data.renk });
+
+                } else if (data.parti_varyantlar || data.renk_varyantlar) {
+                    // Stok koduna göre varyantlar bulundu (Dropdown'a dönüştür)
+                    currentStokKod = data.stok_kod;
+                    currentPartiNo = partiNo;
+                    currentRenk = renk;
+                    currentSeriNo = seriNo;
+
+                    // KRİTİK: Dropdown'ları oluştur
+                    updateVariantInputs(data);
                 } else {
-                    // Eşleşme yok, sadece varyantlar listelendi veya yeni stok
+                    // Eşleşme yok, sadece manuel alanları güncelle
                     currentStokKod = stokKod;
                     currentPartiNo = partiNo;
                     currentRenk = renk;
                     currentSeriNo = seriNo;
+                    
+                    // Input alanlarını varsayılan değere dönüştür
+                    updateVariantInputs({ parti_no: partiNo, renk: renk });
                 }
             })
             .catch(error => {
@@ -279,10 +324,14 @@
 
     // 4. Detaylı Arama Düğmesi
     document.getElementById('ara-btn').addEventListener('click', function() {
+        // KRİTİK: Dropdown'dan değeri al
+        const partiNoElement = document.getElementById('parti_no_input');
+        const renkElement = document.getElementById('renk_input');
+        
         const stokKod = stokKodInput.value.toUpperCase().trim();
-        const partiNo = partiNoInput.value.toUpperCase().trim();
-        const renk = renkInput.value.toUpperCase().trim();
-
+        const partiNo = partiNoElement.tagName === 'SELECT' ? partiNoElement.value : partiNoElement.value.toUpperCase().trim();
+        const renk = renkElement.tagName === 'SELECT' ? renkElement.value : renkElement.value.toUpperCase().trim();
+        
         akilliStokAra('YOK', stokKod, partiNo, renk, DEPO_KODU, 'YOK');
     });
 
@@ -310,7 +359,7 @@
             personel_adi: PERSONEL_ADI 
         };
 
-        fetch(`/ajax/kaydet/${SAYIM_EMRI_ID}/`, { // Doğru URL: /ajax/kaydet/<int:sayim_emri_id>/
+        fetch(`/ajax/kaydet/${SAYIM_EMRI_ID}/`, {
             method: 'POST',
             headers: {
                 "Content-Type": "application/json",
