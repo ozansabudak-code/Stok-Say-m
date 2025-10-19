@@ -34,5 +34,5 @@ urlpatterns = [
     path('ajax/stok-ara-akilli/', views.ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'), 
     path('ajax/kaydet/<int:sayim_emri_id>/', views.ajax_sayim_kaydet, name='ajax_sayim_kaydet'),
     path('ajax/gemini-oku/', views.gemini_parti_oku, name='gemini_parti_oku'),
-    path('ajax_barkod_okuma/', views.ajax_barkod_okuma, name='ajax_barkod_okuma'),
+    path('ajax_stok-ara-akilli/', views.ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
 ]
