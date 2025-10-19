@@ -128,7 +128,6 @@
 
     // --- YENİ: VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
     function updateVariantInputs(data) {
-        // Dropdown'ları temizle ve input'a dönüştür
         const createInput = (id, placeholder, value) => 
             `<input type="text" id="${id}" placeholder="${placeholder}" value="${value}">`;
 
@@ -277,7 +276,7 @@
         }
     });
 
-    // 2. HTML5 BARKOD TARAYICI (Bölüm A)
+    // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU
     document.getElementById('quick-scan-btn').addEventListener('click', () => {
         const html5QrCode = new Html5Qrcode("scanner-container");
 
@@ -297,15 +296,15 @@
         html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
             .then(() => {
                 document.getElementById('quick-scan-btn').style.display = 'none'; 
-                scannerContainer.style.height = '300px'; // Tarayıcı alanını görünür yap
+                scannerContainer.style.height = '300px'; 
             })
             .catch((err) => {
-                scannerContainer.innerHTML = `<p style="color:red;">Kamera Hatası: Lütfen kamera izinlerini kontrol edin veya Dosyadan Seç'i kullanın.</p>`;
+                scannerContainer.innerHTML = `<p style="color:red;">Kamera Hatası: Lütfen kamera izinlerini kontrol edin veya Dosyadan Seç'i kullanın. Detay: ${err}</p>`;
                 console.error("Tarayıcı başlatılamadı:", err);
             });
     });
 
-    // 3. KAMERA/DOSYA BUTONLARI (Bölüm B)
+    // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR)
     document.getElementById('select-file-btn').addEventListener('click', () => {
         document.getElementById('image-input').click();
     });
