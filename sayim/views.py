@@ -25,7 +25,8 @@ from django.core.management import call_command
 from PIL import Image
 import pandas as pd
 import pytesseract # OCR için gerekli kütüphane
-from PIL import Image, ImageFile 
+# Temizlenmiş ve doğru kod
+from PIL import Image, ImageFile
 
 # Gemini (Google GenAI) Imports
 from google import genai
