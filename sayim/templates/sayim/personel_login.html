@@ -2,31 +2,21 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Personel Login</title>
+    <title>Personel Girişi</title>
 </head>
 <body>
     <h1>Personel Girişi</h1>
-    <form id="login-form">
+    
+    <form method="POST" action="{% url 'set_personel_session' %}">
         {% csrf_token %}
-        <input type="text" id="personel" placeholder="Adınız" required>
+        
+        <input type="text" name="personel_adi" placeholder="Adınız" required>
+        
+        <input type="hidden" name="sayim_emri_id" value="{{ sayim_emri_id }}">
+        <input type="hidden" name="depo_kodu" value="{{ depo_kodu }}">
+        
         <button type="submit">Giriş Yap</button>
     </form>
 
-<script>
-document.getElementById('login-form').addEventListener('submit', function(e){
-    e.preventDefault();
-    const personel = document.getElementById('personel').value;
-    fetch("{% url 'set_personel_session' %}", {
-        method: "POST",
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({personel: personel})
-    }).then(res => res.json()).then(data => {
-        if(data.status === "ok"){
-            const url = `/giris/{{ sayim_emri_id }}/{{ depo_kodu }}/`;
-            window.location.href = url;
-        }
-    });
-});
-</script>
 </body>
 </html>
