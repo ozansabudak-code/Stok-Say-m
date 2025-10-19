@@ -17,6 +17,8 @@
         .flex-container { display: flex; gap: 10px; margin-bottom: 10px; }
         .flex-container > div { flex: 1; }
         .section-header { margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        /* QR Tarayıcı alanını başlangıçta gizlemek için */
+        #scanner-container { display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -93,8 +95,6 @@
     // DOM Elementleri
     const barkodInput = document.getElementById('barkod_input');
     const stokKodInput = document.getElementById('stok_kod_input');
-    const partiNoInput = document.getElementById('parti_no_input');
-    const renkInput = document.getElementById('renk_input');
     const miktarInput = document.getElementById('miktar_input');
     const ocrStatus = document.getElementById('ocr_status');
     const scannerContainer = document.getElementById('scanner-container');
@@ -127,25 +127,35 @@
 
 
     // --- YENİ: VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
+    // Bu fonksiyon, Parti ve Renk inputlarını Dropdown'a dönüştürür.
     function updateVariantInputs(data) {
         const createInput = (id, placeholder, value) => 
-            `<input type="text" id="${id}" placeholder="${placeholder}" value="${value}">`;
+            `<input type="text" id="${id}" placeholder="${placeholder}" value="${value || ''}">`;
+        
+        // KRİTİK: Dinamik elementleri yeniden oluştururken, onlara atıfta bulunan değişkenleri güncelle
+        let parti_no_input_ref;
+        let renk_input_ref;
 
         // 1. Parti No için
         if (data.parti_varyantlar && data.parti_varyantlar.length > 0) {
             let options = data.parti_varyantlar.map(p => `<option value="${p}">${p}</option>`).join('');
             partiNoContainer.innerHTML = `<select id="parti_no_input">${options}</select>`;
         } else {
-            partiNoContainer.innerHTML = createInput('parti_no_input', 'Parti No (Opsiyonel)', data.parti_no || '');
+            partiNoContainer.innerHTML = createInput('parti_no_input', 'Parti No (Opsiyonel)', data.parti_no);
         }
+        parti_no_input_ref = document.getElementById('parti_no_input');
 
         // 2. Renk/Varyant için
         if (data.renk_varyantlar && data.renk_varyantlar.length > 0) {
             let options = data.renk_varyantlar.map(r => `<option value="${r}">${r}</option>`).join('');
             renkContainer.innerHTML = `<select id="renk_input">${options}</select>`;
         } else {
-            renkContainer.innerHTML = createInput('renk_input', 'Renk/Varyant (Opsiyonel)', data.renk || '');
+            renkContainer.innerHTML = createInput('renk_input', 'Renk/Varyant (Opsiyonel)', data.renk);
         }
+        renk_input_ref = document.getElementById('renk_input');
+        
+        // Yeni DOM elementleri oluşturulduğu için, onlara ENTER dinleyicilerini yeniden kur
+        setupAutoSearchListeners(); 
     }
 
 
@@ -184,14 +194,12 @@
                     currentSeriNo = seriNo;
 
                     stokKodInput.value = data.stok_kod;
-                    partiNoInput.value = data.parti_no;
-                    renkInput.value = data.renk;
                     document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
 
-                    // Eğer önceden dropdown varsa, tekrar input'a döner
+                    // Dropdown'ları normal input'a dönüştür
                     updateVariantInputs({ parti_no: data.parti_no, renk: data.renk });
 
-                } else if (data.parti_varyantlar || data.renk_varyantlar) {
+                } else if (data.parti_varyantlar && data.parti_varyantlar.length > 0 || data.renk_varyantlar && data.renk_varyantlar.length > 0) {
                     // Stok koduna göre varyantlar bulundu (Dropdown'a dönüştür)
                     currentStokKod = data.stok_kod;
                     currentPartiNo = partiNo;
@@ -210,6 +218,12 @@
                     // Input alanlarını varsayılan değere dönüştür
                     updateVariantInputs({ parti_no: partiNo, renk: renk });
                 }
+                
+                // Kayıt için kullanılan current değerlerini, eğer varsa, güncel Dropdown/Input değerleriyle senkronize et
+                const partiNoElement = document.getElementById('parti_no_input');
+                const renkElement = document.getElementById('renk_input');
+                currentPartiNo = partiNoElement.value.toUpperCase().trim();
+                currentRenk = renkElement.value.toUpperCase().trim();
             })
             .catch(error => {
                 document.getElementById('urun_bilgi').innerText = `Arama Hatası: ${error.message}`;
@@ -240,15 +254,14 @@
                 // Form alanlarını Gemini'dan gelen verilerle doldur
                 barkodInput.value = data.seri_no; 
                 stokKodInput.value = data.stok_kod;
-                partiNoInput.value = data.parti_no;
-                renkInput.value = data.renk;
 
                 // 2. Adım: Arama fonksiyonunu tetikle
+                // Parti ve Renk inputları zaten dinamik olarak ayarlanacak
                 akilliStokAra(
                     data.seri_no, 
                     data.stok_kod, 
-                    data.parti_no, 
-                    data.renk, 
+                    data.parti_no, // Gemini'dan gelen ilk parti değeri
+                    data.renk,     // Gemini'dan gelen ilk renk değeri
                     DEPO_KODU, 
                     data.barkod_ham_veri
                 );
@@ -264,78 +277,120 @@
     }
 
     // --- OLAY DİNLEYİCİLERİ ---
-
-    // 1. Hızlı Barkod Input Dinleyicisi (Bölüm A)
-    barkodInput.addEventListener('keydown', function(event) {
-        if (event.key === 'Enter') {
-            event.preventDefault(); 
-            const hamVeri = this.value.toUpperCase().trim();
-            if (hamVeri) {
-                akilliStokAra(hamVeri, 'YOK', 'YOK', 'YOK', DEPO_KODU, hamVeri); 
+    
+    // YENİ: Tüm arama inputları için ENTER tuşu dinleyicisi (DROPDOWN DÜZELTMESİ)
+    function setupAutoSearchListeners() {
+        // Dinlenmesi gereken input'lar ve select'ler
+        const inputs = [barkodInput, stokKodInput];
+        
+        // Dinamik olarak oluşturulan Parti ve Renk alanlarını al
+        const partiInput = document.getElementById('parti_no_input');
+        const renkInput = document.getElementById('renk_input');
+        
+        if (partiInput) inputs.push(partiInput);
+        if (renkInput) inputs.push(renkInput);
+        
+        // Dinleyicileri temizle (Özellikle updateVariantInputs sonrası çift tetiklemeyi önlemek için)
+        inputs.forEach(input => {
+            if(input) {
+                input.removeEventListener('keydown', handleSearchEnter);
+                input.removeEventListener('change', handleSearchEnter);
             }
+        });
+        
+        // Yeni dinleyicileri kur
+        inputs.forEach(input => {
+            if (input) {
+                // Input alanları için ENTER tuşunu dinle
+                if(input.tagName === 'INPUT') {
+                    input.addEventListener('keydown', handleSearchEnter);
+                } 
+                // Select/Dropdown alanları için değişim (change) olayını dinle
+                else if (input.tagName === 'SELECT') {
+                    input.addEventListener('change', handleSearchEnter);
+                }
+            }
+        });
+    }
+
+    function handleSearchEnter(event) {
+        if (event.type === 'keydown' && event.key !== 'Enter') {
+            return;
         }
-    });
+        if (event.type === 'keydown') {
+            event.preventDefault(); 
+        }
+
+        const currentPartiNo = document.getElementById('parti_no_input').value.toUpperCase().trim();
+        const currentRenk = document.getElementById('renk_input').value.toUpperCase().trim();
+        const currentStokKod = stokKodInput.value.toUpperCase().trim();
+        const currentSeriNo = barkodInput.value.toUpperCase().trim();
+        
+        if (event.target.id === 'barkod_input' || event.target.tagName === 'SELECT') {
+           // Seri No veya Dropdown değiştiyse, en yüksek öncelikli olan Seri No ile ara
+           akilliStokAra(currentSeriNo, 'YOK', currentPartiNo, currentRenk, DEPO_KODU, currentSeriNo);
+        } else {
+           // Stok Kodu, Parti No veya Renk input'u değiştiyse (Enter ile)
+           akilliStokAra('YOK', currentStokKod, currentPartiNo, currentRenk, DEPO_KODU, 'YOK');
+        }
+    }
+
 
     // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU
-    document.getElementById('quick-scan-btn').addEventListener('click', () => {
-        const html5QrCode = new Html5Qrcode("scanner-container");
+    function setupQuickScanListener() {
+        const quickScanBtn = document.getElementById('quick-scan-btn');
+        if (!quickScanBtn) return;
+        
+        quickScanBtn.addEventListener('click', () => {
+            // Tarayıcı konteynerini görünür yap
+            scannerContainer.style.display = 'block';
+            
+            const html5QrCode = new Html5Qrcode("scanner-container");
+            
+            const qrCodeSuccessCallback = (decodedText, decodedResult) => {
+                html5QrCode.stop().then(() => {
+                    // Başarılı tarama sonrası tarayıcıyı temizle
+                    scannerContainer.innerHTML = '';
+                    scannerContainer.style.display = 'none';
+                    quickScanBtn.style.display = 'block'; 
+                    
+                    barkodInput.value = decodedText.toUpperCase().trim(); 
+                    akilliStokAra(decodedText, 'YOK', 'YOK', 'YOK', DEPO_KODU, decodedText); 
+                    
+                }).catch(err => { console.error("Tarayıcı durdurulurken hata oluştu:", err); });
+            };
 
-        const qrCodeSuccessCallback = (decodedText, decodedResult) => {
-            html5QrCode.stop().then(() => {
-                scannerContainer.innerHTML = '';
-                document.getElementById('quick-scan-btn').style.display = 'block'; 
-                
-                barkodInput.value = decodedText.toUpperCase().trim(); 
-                akilliStokAra(decodedText, 'YOK', 'YOK', 'YOK', DEPO_KODU, decodedText); 
-                
-            }).catch(err => { console.error("Tarayıcı durdurulurken hata oluştu:", err); });
-        };
+            const config = { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true };
 
-        const config = { fps: 10, qrbox: { width: 250, height: 250 }, rememberLastUsedCamera: true };
-
-        html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
-            .then(() => {
-                document.getElementById('quick-scan-btn').style.display = 'none'; 
-                scannerContainer.style.height = '300px'; 
-            })
-            .catch((err) => {
-                scannerContainer.innerHTML = `<p style="color:red;">Kamera Hatası: Lütfen kamera izinlerini kontrol edin veya Dosyadan Seç'i kullanın. Detay: ${err}</p>`;
-                console.error("Tarayıcı başlatılamadı:", err);
-            });
-    });
-
-    // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR)
-    document.getElementById('select-file-btn').addEventListener('click', () => {
-        document.getElementById('image-input').click();
-    });
-
-    document.getElementById('camera-btn').addEventListener('click', () => {
-        document.getElementById('image-input').setAttribute('capture', 'environment');
-        document.getElementById('image-input').click();
-    });
-
-    document.getElementById('image-input').addEventListener('change', function() {
-        if (this.files.length > 0) {
-            geminiOku(this.files[0]);
-        }
-        this.removeAttribute('capture');
-    });
+            html5QrCode.start({ facingMode: "environment" }, config, qrCodeSuccessCallback)
+                .then(() => {
+                    quickScanBtn.style.display = 'none'; 
+                    scannerContainer.style.height = '300px'; 
+                })
+                .catch((err) => {
+                    scannerContainer.innerHTML = `<p style="color:red;">Kamera Hatası: Lütfen kamera izinlerini kontrol edin veya Dosyadan Seç'i kullanın. Detay: ${err}</p>`;
+                    console.error("Tarayıcı başlatılamadı:", err);
+                    scannerContainer.style.display = 'block'; // Hatayı göster
+                    quickScanBtn.style.display = 'block'; // Butonu geri getir
+                });
+        });
+    }
 
     // 4. Detaylı Arama Düğmesi
     document.getElementById('ara-btn').addEventListener('click', function() {
-        // KRİTİK: Dropdown'dan değeri al
         const partiNoElement = document.getElementById('parti_no_input');
         const renkElement = document.getElementById('renk_input');
         
         const stokKod = stokKodInput.value.toUpperCase().trim();
-        const partiNo = partiNoElement.tagName === 'SELECT' ? partiNoElement.value : partiNoElement.value.toUpperCase().trim();
-        const renk = renkElement.tagName === 'SELECT' ? renkElement.value : renkElement.value.toUpperCase().trim();
+        const partiNo = partiNoElement.value.toUpperCase().trim(); // value zaten select/input değerini verir
+        const renk = renkElement.value.toUpperCase().trim();
         
         akilliStokAra('YOK', stokKod, partiNo, renk, DEPO_KODU, 'YOK');
     });
 
     // 5. Sayım Kaydetme Düğmesi
     document.getElementById('sayim_kaydet_btn').addEventListener('click', function() {
+        // ... (Kayıt mantığı) ...
         const miktar = miktarInput.value;
 
         if (!currentStokKod || currentStokKod === 'YOK') {
@@ -384,8 +439,32 @@
         });
     });
 
-    // Sayfa yüklendiğinde bir ilk arama tetikle
+    // Sayfa tamamen yüklendiğinde tüm olay dinleyicilerini kur ve ilk aramayı yap
     document.addEventListener('DOMContentLoaded', () => {
+        // Gemini buton dinleyicilerini kur
+        document.getElementById('select-file-btn').addEventListener('click', () => {
+            document.getElementById('image-input').click();
+        });
+
+        document.getElementById('camera-btn').addEventListener('click', () => {
+            document.getElementById('image-input').setAttribute('capture', 'environment');
+            document.getElementById('image-input').click();
+        });
+
+        document.getElementById('image-input').addEventListener('change', function() {
+            if (this.files.length > 0) {
+                geminiOku(this.files[0]);
+            }
+            this.removeAttribute('capture');
+        });
+        
+        // QR Tarayıcı dinleyicisini kur
+        setupQuickScanListener(); 
+        
+        // ENTER ve Dropdown dinleyicilerini kur (İlk yüklemede varsayılan input'lar için)
+        setupAutoSearchListeners();
+        
+        // İlk aramayı tetikle
         akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
     });
 </script>
