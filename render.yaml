@@ -1,15 +1,15 @@
-# render.yaml (SON VE KESİN VERSİYON)
+# render.yaml (FINAL FIX - PATH'i geri yüklüyoruz)
 services:
   - type: web
     name: Stok-1
     env: python
     buildCommand: 'pip install -r requirements.txt'
-    
+
     # Yeni: Start Command'dan önce çalışacak güvenli komutlar
     preRunCommand: 'python manage.py collectstatic --noinput && python manage.py migrate' 
     
-    # Start Command sadece uygulamayı başlatır
-    startCommand: 'gunicorn stock_project.wsgi'
+    # Start Command'ı, gunicorn'u PATH üzerinden bulacak şekilde güncelliyoruz
+    startCommand: '/usr/bin/env PATH="/opt/render/.local/bin:$PATH" gunicorn stock_project.wsgi'
     
     envVars:
       - key: PORT
