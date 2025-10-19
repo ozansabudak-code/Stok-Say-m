@@ -15,6 +15,7 @@
         hr { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
         .flex-container { display: flex; gap: 10px; margin-bottom: 10px; }
         .flex-container > div { flex: 1; }
+        .section-header { margin-top: 25px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
     </style>
 </head>
 <body>
@@ -26,18 +27,29 @@
         <a href="{% url 'raporlama_onay' pk=sayim_emri.pk %}">Raporlama ve Onay Ekranına Git</a>
     </div>
 
-    <h2>1. Stok Arama (Barkod/QR veya Kamera)</h2>
+    <h2>1. Stok Arama ve Veri Girişi</h2>
     
-    <input type="text" id="barkod_input" placeholder="Barkod/QR kodunu okutun veya girin (Enter'a basın)">
-    <small style="color: gray;">(Bu alan Seri No olarak önceliklendirilir.)</small>
-    
-    <div class="flex-container">
-        <button id="camera-btn">📷 Kamera ile Çek</button>
-        <input type="file" id="image-input" accept="image/*" style="display: none;">
-        <button id="select-file-btn">📂 Dosyadan Seç</button>
+    <div class="info-box">
+        <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
+        <p style="font-size: 0.9em; color: #555;">(Harici okuyucu veya manuel Seri No girişi)</p>
+        <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
     </div>
-    <div id="ocr_status" class="message"></div>
 
+    <hr>
+    
+    <div class="info-box">
+        <h3 class="section-header">B. Etiket Görüntüsü ile Giriş (Gemini/OCR)</h3>
+        <p style="font-size: 0.9em; color: #555;">(Karmaşık etiketlerden Stok, Parti ve Renk okuma)</p>
+        
+        <div class="flex-container">
+            <button id="camera-btn" style="background-color: #556B2F; color: white;">📷 Kamera ile Çek</button>
+            
+            <input type="file" id="image-input" accept="image/*" style="display: none;">
+            <button id="select-file-btn" style="background-color: #8A2BE2; color: white;">📂 Dosyadan Seç</button>
+        </div>
+        <div id="ocr_status" class="message" style="margin-top: 5px;"></div>
+    </div>
+    
     <hr>
 
     <h3>Veya Detaylı Giriş</h3>
@@ -80,7 +92,7 @@
     let currentStokKod = '';
     let currentPartiNo = 'YOK';
     let currentRenk = 'YOK';
-    let currentSeriNo = 'YOK';
+    let currentSeriNo = 'YOK'; // Şu anda aktif seri no (opsiyonel)
 
     // CSRF Token Fonksiyonu (Django POST için kritik)
     function getCookie(name) {
@@ -105,6 +117,7 @@
         document.getElementById('urun_bilgi').innerText = 'Arama yapılıyor...';
         document.getElementById('sistem_stok_goster').innerText = '0.00';
         document.getElementById('last_sayim_goster').innerText = 'Bilinmiyor';
+        document.getElementById('kayit_mesaji').innerText = ''; // Önceki mesajı temizle
 
         const params = new URLSearchParams({
             seri_no: seriNo || 'YOK',
@@ -115,31 +128,37 @@
             barkod_ham_veri: barkodHamVeri || 'YOK'
         });
 
+        // AJAX ile arama (GET isteği)
         fetch(`/ajax/akilli-stok-ara/?${params.toString()}`)
-            .then(response => response.json())
+            .then(response => {
+                // Sunucudan (views.py) gelen yanıt JSON değilse, bu bir sunucu hatasıdır (500)
+                if (!response.ok) {
+                    throw new Error(`Sunucu Hatası (${response.status}). Yanıt JSON değil.`);
+                }
+                return response.json();
+            })
             .then(data => {
                 document.getElementById('urun_bilgi').innerText = data.urun_bilgi;
                 document.getElementById('last_sayim_goster').innerText = data.last_sayim;
                 
                 if (data.found) {
+                    // Tam eşleşme bulundu
                     currentStokKod = data.stok_kod;
                     currentPartiNo = data.parti_no;
                     currentRenk = data.renk;
+                    currentSeriNo = seriNo; // Seri no ile bulunduysa kaydet
 
                     stokKodInput.value = data.stok_kod;
                     partiNoInput.value = data.parti_no;
                     renkInput.value = data.renk;
                     document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
 
-                } else if (data.parti_varyantlar.length > 0 || data.renk_varyantlar.length > 0) {
-                    currentStokKod = data.stok_kod;
-                    currentPartiNo = partiNo;
-                    currentRenk = renk;
-                    // Hata: Varyant bulundu, tam eşleşme yok.
                 } else {
+                    // Eşleşme yok, sadece varyantlar listelendi veya yeni stok
                     currentStokKod = stokKod;
                     currentPartiNo = partiNo;
                     currentRenk = renk;
+                    currentSeriNo = seriNo;
                 }
             })
             .catch(error => {
@@ -155,6 +174,7 @@
         const formData = new FormData();
         formData.append('image', file);
         
+        // AJAX ile Gemini'a resim gönder
         fetch("{% url 'gemini_parti_oku' %}", {
             method: 'POST',
             headers: {
@@ -169,12 +189,13 @@
                 ocrStatus.innerText = data.message;
                 
                 // Form alanlarını Gemini'dan gelen verilerle doldur
-                barkodInput.value = data.seri_no;
+                // Not: views.py'da Gemini çıktısı standardize edilmiş olmalıdır.
+                barkodInput.value = data.seri_no; 
                 stokKodInput.value = data.stok_kod;
                 partiNoInput.value = data.parti_no;
                 renkInput.value = data.renk;
 
-                // 1. Adım: Form alanları doldu. 2. Adım: Arama fonksiyonunu tetikle.
+                // 2. Adım: Arama fonksiyonunu tetikle
                 akilliStokAra(
                     data.seri_no, 
                     data.stok_kod, 
@@ -190,7 +211,7 @@
         })
         .catch(error => {
             ocrStatus.className = 'message error';
-            ocrStatus.innerText = `Kritik Hata: Sunucuya ulaşılamadı. ${error.message}`;
+            ocrStatus.innerText = `Kritik Hata: Gemini Sunucusuna ulaşılamadı. ${error.message}`;
         });
     }
 
@@ -214,7 +235,8 @@
         const partiNo = partiNoInput.value.toUpperCase().trim();
         const renk = renkInput.value.toUpperCase().trim();
 
-        akilliStokAra(currentSeriNo, stokKod, partiNo, renk, DEPO_KODU, 'YOK');
+        // Seri no alanı boş bırakıldığı için sadece stok koduna göre arama yap
+        akilliStokAra('YOK', stokKod, partiNo, renk, DEPO_KODU, 'YOK');
     });
 
     // 3. Kamera/Dosya Butonları
@@ -232,7 +254,6 @@
         if (this.files.length > 0) {
             geminiOku(this.files[0]);
         }
-        // Capture özelliğini sonraki dosya seçimleri için kaldır
         this.removeAttribute('capture');
     });
 
@@ -260,6 +281,7 @@
             personel_adi: PERSONEL_ADI 
         };
 
+        // AJAX ile Sayım Kaydı (POST isteği)
         fetch(`/ajax/sayim-kaydet/${SAYIM_EMRI_ID}/`, {
             method: 'POST',
             headers: {
@@ -286,9 +308,10 @@
         });
     });
 
-    // Sayfa yüklendiğinde bir ilk arama tetikle
+    // Sayfa yüklendiğinde bir ilk arama tetikle (Opsiyonel: Varsa form değerlerini alarak)
     document.addEventListener('DOMContentLoaded', () => {
-        akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
+        // Uygulama yüklendikten sonra bir ilk arama yap
+        akilliStokAra(barkodInput.value, stokKodInput.value, partiNoInput.value, renkInput.value, DEPO_KODU, 'YOK');
     });
 </script>
 </body>
