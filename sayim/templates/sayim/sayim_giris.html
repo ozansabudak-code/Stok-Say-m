@@ -5,17 +5,19 @@
     <meta charset="UTF-8">
     <title>Stok Sayım Girişi | {{ sayim_emri.ad }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://unpkg.com/html5-qrcode@2.3.9/html5-qrcode.min.js"></script>
     <style>
-        /* SADECE TEMEL OKUNABİLİRLİK STİLLERİ */
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
-        input[type="text"], input[type="number"], button, select { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; }
-        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; }
-        .message.success { color: green; }
-        .message.error { color: red; }
+        /* SADE VE İŞLEVSEL TEMEL STİLLER */
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; background-color: #f4f7f6; }
+        input[type="text"], input[type="number"], button, select { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px;}
+        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: white; border-radius: 4px; }
+        .message.success { color: green; font-weight: bold; }
+        .message.error { color: red; font-weight: bold; }
         hr { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
         .flex-container { display: flex; gap: 10px; margin-bottom: 10px; }
-        #scanner-container { display: none; margin-top: 10px; } /* Tarayıcı alanı görünmez kalmalı */
+        .section-header { margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
+        button { cursor: pointer; background-color: #007bff; color: white; border: none; }
+        /* QR Tarayıcı alanını başlangıçta gizliyoruz (kullanılmayacak) */
+        #scanner-container { display: none; }
     </style>
 </head>
 <body>
@@ -32,10 +34,7 @@
     <div class="info-box">
         <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
         <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
-        <button id="quick-scan-btn">
-            📸 QR/Barkod Tarayıcıyı Aç
-        </button>
-        <div id="scanner-container"></div>
+        <p style="font-size: 0.9em; color: gray;">(Kamera ile okuma için B. Etiket Girişini kullanın.)</p>
     </div>
 
     <hr>
@@ -45,9 +44,9 @@
         <p style="font-size: 0.9em; color: #555;">(Karmaşık etiketlerden Stok, Parti ve Renk okuma)</p>
         
         <div class="flex-container">
-            <button id="camera-btn">📷 Kamera ile Çek</button>
+            <button id="camera-btn" style="background-color: #556B2F;">📷 Kamera ile Çek</button>
             <input type="file" id="image-input" accept="image/*" style="display: none;">
-            <button id="select-file-btn">📂 Dosyadan Seç</button>
+            <button id="select-file-btn" style="background-color: #8A2BE2;">📂 Dosyadan Seç</button>
         </div>
         <div id="ocr_status" class="message" style="margin-top: 5px;"></div>
     </div>
@@ -78,7 +77,7 @@
     <h2>2. Sayım Girişi</h2>
     
     <input type="number" id="miktar_input" placeholder="Sayım Miktarı (Örn: 1.00)">
-    <button id="sayim_kaydet_btn">KAYDET (**ENTER**)</button>
+    <button id="sayim_kaydet_btn" style="background-color: #28a745;">KAYDET (**ENTER**)</button>
     <p class="message" id="kayit_mesaji"></p>
     <p>Yeni Toplam Sayım: <strong id="yeni_toplam_goster">0.00</strong></p>
 
@@ -162,8 +161,8 @@
             document.getElementById('sistem_stok_goster').innerText = '0.00';
             document.getElementById('last_sayim_goster').innerText = 'Bilinmiyor';
             document.getElementById('kayit_mesaji').innerText = ''; 
-            urunBilgiAlani.className = 'info-box-status status-default'; 
-            sistemStokGosterContainer.className = 'info-box-status'; 
+            urunBilgiAlani.classList.remove('status-found', 'status-missing'); // Sınıfları temizle
+            urunBilgiAlani.classList.add('status-default'); 
 
             const params = new URLSearchParams({
                 seri_no: seriNo || 'YOK',
@@ -326,6 +325,7 @@
 
 
         // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU
+        // Not: Bu kısım çalışmazsa, tarayıcı kısıtlamasıdır.
         function setupQuickScanListener() {
             const quickScanBtn = document.getElementById('quick-scan-btn');
             if (!quickScanBtn) return;
@@ -444,13 +444,6 @@
                 document.getElementById('kayit_mesaji').innerText = `Kritik Kayıt Hatası: Sunucuya ulaşılamadı. ${error.message}`;
             });
         });
-
-        // Sayfa tamamen yüklendiğinde tüm olay dinleyicilerini kur ve ilk aramayı yap
-        setupGeminiListeners();
-        setupQuickScanListener(); 
-        setupAutoSearchListeners();
-        
-        akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
     });
 </script>
 </body>
