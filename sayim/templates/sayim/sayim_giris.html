@@ -6,87 +6,117 @@
     <title>Stok Sayım Girişi | {{ sayim_emri.ad }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://unpkg.com/html5-qrcode@2.3.9/html5-qrcode.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+
     <style>
-        /* CSS Düzeltilene Kadar Geçici Stil */
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
-        input[type="text"], input[type="number"], button, select { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; }
-        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; }
-        .message.success { color: green; }
-        .message.error { color: red; }
-        hr { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
+        /* Ana Stil ve Düzen */
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 20px; max-width: 600px; margin: auto; background-color: #f4f7f6; }
+        .container { background-color: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }
+        h2 { border-bottom: 2px solid #007bff; padding-bottom: 10px; margin-top: 20px; color: #333; }
+        .section-header { color: #007bff; margin-bottom: 15px; }
+
+        /* Input ve Buton Stilleri */
+        input[type="text"], input[type="number"], button, select { 
+            padding: 12px; margin: 8px 0; display: block; width: 100%; box-sizing: border-box; 
+            border: 1px solid #c0c0c0; border-radius: 6px; font-size: 1em; 
+        }
+        button { cursor: pointer; transition: background-color 0.3s; }
+        
+        /* Dinamik Bilgi Alanları (Sistem Stoğu ve Ürün Bilgisi) */
+        .info-box-status { 
+            padding: 10px; border-radius: 4px; margin-top: 5px; 
+            display: flex; justify-content: space-between; align-items: center;
+        }
+        #last_sayim_goster_container { background-color: #fffacd; border: 1px solid #ffebcd; } /* Sarı */
+        
+        /* Durum Renkleri */
+        .status-found { background-color: #e6ffe6; border: 1px solid #00c853; color: #004d40; font-weight: bold; } /* Yeşil */
+        .status-missing { background-color: #ffe6e6; border: 1px solid #d50000; color: #880000; } /* Kırmızı */
+        .status-default { background-color: #fff; } /* Varsayılan */
+
+        /* Buton Renkleri */
+        .btn-primary { background-color: #007bff; color: white; border: none; }
+        .btn-secondary { background-color: #6c757d; color: white; border: none; }
+        .btn-success { background-color: #28a745; color: white; border: none; }
+
         .flex-container { display: flex; gap: 10px; margin-bottom: 10px; }
-        .flex-container > div { flex: 1; }
-        .section-header { margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-        /* QR Tarayıcı alanını başlangıçta gizlemek için */
         #scanner-container { display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
-    <div class="info-box">
-        <h3>Sayım Bilgileri</h3>
-        <p>Sayım Emri: <strong>{{ sayim_emri.ad }}</strong> (ID: {{ sayim_emri.pk }})</p>
-        <p>Depo Kodu: <strong id="depo_kodu_gizli">{{ depo_kodu }}</strong></p>
-        <p>Personel: <strong id="personel_adi_gizli">{{ personel_adi }}</strong></p>
-        <a href="{% url 'raporlama_onay' pk=sayim_emri.pk %}">Raporlama ve Onay Ekranına Git</a>
-    </div>
-
-    <h2>1. Stok Arama ve Veri Girişi</h2>
-    
-    <div class="info-box">
-        <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
-        <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
-        <button id="quick-scan-btn" style="background-color: #007bff; color: white; margin-top: 5px;">
-            📸 QR/Barkod Tarayıcıyı Aç
-        </button>
-        <div id="scanner-container"></div>
-    </div>
-
-    <hr>
-    
-    <div class="info-box">
-        <h3 class="section-header">B. Etiket Görüntüsü ile Giriş (Gemini/OCR)</h3>
-        <p style="font-size: 0.9em; color: #555;">(Karmaşık etiketlerden Stok, Parti ve Renk okuma)</p>
-        
-        <div class="flex-container">
-            <button id="camera-btn" style="background-color: #556B2F; color: white;">📷 Kamera ile Çek</button>
-            <input type="file" id="image-input" accept="image/*" style="display: none;">
-            <button id="select-file-btn" style="background-color: #8A2BE2; color: white;">📂 Dosyadan Seç</button>
+    <div class="container">
+        <div class="info-box">
+            <h3>Sayım Bilgileri</h3>
+            <p>Sayım Emri: <strong>{{ sayim_emri.ad }}</strong> (ID: {{ sayim_emri.pk }})</p>
+            <p>Depo Kodu: <strong>{{ depo_kodu }}</strong></p>
+            <p>Personel: <strong>{{ personel_adi }}</strong></p>
+            <a href="{% url 'raporlama_onay' pk=sayim_emri.pk %}" class="btn-primary" 
+               style="text-align: center; text-decoration: none; padding: 10px 15px; border-radius: 5px; margin-top: 10px;">
+                Raporlama ve Onay Ekranına Git
+            </a>
         </div>
-        <div id="ocr_status" class="message" style="margin-top: 5px;"></div>
-    </div>
-    
-    <hr>
 
-    <h3 class="section-header">Veya Detaylı Giriş</h3>
-    
-    <div id="stok_kod_container">
-        <input type="text" id="stok_kod_input" placeholder="Stok Kodu">
-    </div>
-    <div id="parti_no_container">
-        <input type="text" id="parti_no_input" placeholder="Parti No (Opsiyonel)">
-    </div>
-    <div id="renk_container">
-        <input type="text" id="renk_input" placeholder="Renk/Varyant (Opsiyonel)">
-    </div>
-    <button id="ara-btn">Stok Ara</button>
+        <h2>1. Stok Arama ve Veri Girişi</h2>
+        
+        <div class="info-box">
+            <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
+            <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
+            <button id="quick-scan-btn" class="btn-primary" style="margin-top: 5px;">
+                📸 QR/Barkod Tarayıcıyı Aç
+            </button>
+            <div id="scanner-container"></div>
+        </div>
 
-    <div id="urun_bilgi_alani" style="margin-top: 15px;">
-        <p>Ürün: <strong id="urun_bilgi">Stok kodu veya Barkod girin...</strong></p>
-        <p>Sistem Stoğu: <strong id="sistem_stok_goster">0.00</strong></p>
-        <p>Son Sayım: <strong id="last_sayim_goster">Bilinmiyor</strong></p>
-    </div>
+        <hr>
+        
+        <div class="info-box">
+            <h3 class="section-header">B. Etiket Görüntüsü ile Giriş (Gemini/OCR)</h3>
+            <p style="font-size: 0.9em; color: #555;">(Karmaşık etiketlerden Stok, Parti ve Renk okuma)</p>
+            
+            <div class="flex-container">
+                <button id="camera-btn" class="btn-secondary" style="background-color: #556B2F;">📷 Kamera ile Çek</button>
+                <input type="file" id="image-input" accept="image/*" style="display: none;">
+                <button id="select-file-btn" class="btn-secondary" style="background-color: #8A2BE2;">📂 Dosyadan Seç</button>
+            </div>
+            <div id="ocr_status" class="message" style="margin-top: 5px;"></div>
+        </div>
+        
+        <hr>
 
-    <hr>
+        <h3 class="section-header">Veya Detaylı Giriş</h3>
+        
+        <div id="stok_kod_container">
+            <input type="text" id="stok_kod_input" placeholder="Stok Kodu">
+        </div>
+        <div id="parti_no_container">
+            <input type="text" id="parti_no_input" placeholder="Parti No (Opsiyonel)">
+        </div>
+        <div id="renk_container">
+            <input type="text" id="renk_input" placeholder="Renk/Varyant (Opsiyonel)">
+        </div>
+        <button id="ara-btn">Stok Ara</button>
 
-    <h2>2. Sayım Girişi</h2>
-    
-    <input type="number" id="miktar_input" placeholder="Sayım Miktarı (Örn: 1.00)">
-    <button id="sayim_kaydet_btn">KAYDET (**ENTER**)</button>
-    <p class="message" id="kayit_mesaji"></p>
-    <p>Yeni Toplam Sayım: <strong id="yeni_toplam_goster">0.00</strong></p>
+        <div id="urun_bilgi_alani" class="info-box-status status-default">
+            <span id="urun_bilgi">Stok kodu veya Barkod girin...</span>
+        </div>
+        
+        <div class="info-box-status" id="sistem_stok_goster_container">
+            <span>Sistem Stoğu:</span> <strong id="sistem_stok_goster">0.00</strong>
+        </div>
+        
+        <div class="info-box-status" id="last_sayim_goster_container" style="background-color: #fffacd; border: 1px solid #ffebcd;">
+            <span>Son Sayım:</span> <strong id="last_sayim_goster">Bilinmiyor</strong>
+        </div>
 
+        <hr>
 
-<script>
+        <h2>2. Sayım Girişi</h2>
+        
+        <input type="number" id="miktar_input" placeholder="Sayım Miktarı (Örn: 1.00)">
+        <button id="sayim_kaydet_btn" class="btn-success">KAYDET (**ENTER**)</button>
+        <p class="message" id="kayit_mesaji"></p>
+        <p>Yeni Toplam Sayım: <strong id="yeni_toplam_goster">0.00</strong></p>
+    </div> <script>
     // --- TEMEL TANIMLAR ---
     const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
     const DEPO_KODU = document.getElementById('depo_kodu_gizli').innerText.trim();
@@ -99,9 +129,10 @@
     const ocrStatus = document.getElementById('ocr_status');
     const scannerContainer = document.getElementById('scanner-container');
     
-    const stokKodContainer = document.getElementById('stok_kod_container');
     const partiNoContainer = document.getElementById('parti_no_container');
     const renkContainer = document.getElementById('renk_container');
+    const urunBilgiAlani = document.getElementById('urun_bilgi_alani'); // Yeni
+    const sistemStokGosterContainer = document.getElementById('sistem_stok_goster_container'); // Yeni
 
     let currentStokKod = '';
     let currentPartiNo = 'YOK';
@@ -126,7 +157,7 @@
     const CSRF_TOKEN = getCookie('csrftoken');
 
 
-    // --- VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
+    // --- YENİ: VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
     function updateVariantInputs(data) {
         const createInput = (id, placeholder, value) => 
             `<input type="text" id="${id}" placeholder="${placeholder}" value="${value || ''}">`;
@@ -134,8 +165,6 @@
         // 1. Parti No için
         if (data.parti_varyantlar && data.parti_varyantlar.length > 0) {
             let options = data.parti_varyantlar.map(p => `<option value="${p}">${p}</option>`).join('');
-            const selectedParti = data.parti_no || data.parti_varyantlar[0];
-            options = `<option value="${selectedParti}" selected>${selectedParti}</option>` + options.replace(`<option value="${selectedParti}">`, '').replace(`</option>`, '');
             partiNoContainer.innerHTML = `<select id="parti_no_input">${options}</select>`;
         } else {
             partiNoContainer.innerHTML = createInput('parti_no_input', 'Parti No (Opsiyonel)', data.parti_no);
@@ -144,8 +173,6 @@
         // 2. Renk/Varyant için
         if (data.renk_varyantlar && data.renk_varyantlar.length > 0) {
             let options = data.renk_varyantlar.map(r => `<option value="${r}">${r}</option>`).join('');
-            const selectedRenk = data.renk || data.renk_varyantlar[0];
-            options = `<option value="${selectedRenk}" selected>${selectedRenk}</option>` + options.replace(`<option value="${selectedRenk}">`, '').replace(`</option>`, '');
             renkContainer.innerHTML = `<select id="renk_input">${options}</select>`;
         } else {
             renkContainer.innerHTML = createInput('renk_input', 'Renk/Varyant (Opsiyonel)', data.renk);
@@ -162,6 +189,8 @@
         document.getElementById('sistem_stok_goster').innerText = '0.00';
         document.getElementById('last_sayim_goster').innerText = 'Bilinmiyor';
         document.getElementById('kayit_mesaji').innerText = ''; 
+        urunBilgiAlani.className = 'info-box-status status-default'; // Varsayılan renk
+        sistemStokGosterContainer.className = 'info-box-status'; // Varsayılan renk
 
         const params = new URLSearchParams({
             seri_no: seriNo || 'YOK',
@@ -190,10 +219,11 @@
                 currentSeriNo = seriNo;
                 
                 if (data.found) {
-                    // Tam eşleşme bulundu
+                    // Tam eşleşme bulundu: Input alanlarını bulgularla güncelle
                     stokKodInput.value = data.stok_kod;
                     document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
-
+                    urunBilgiAlani.classList.add('status-found'); // YEŞİL yap
+                    
                     // Dropdown'ları normal input'a dönüştür (Eşleşen parti/renk değeri ile)
                     updateVariantInputs({ parti_no: data.parti_no, renk: data.renk });
 
@@ -202,16 +232,13 @@
                     currentStokKod = data.stok_kod;
                     currentPartiNo = partiNo;
                     currentRenk = renk;
-                    currentSeriNo = seriNo;
-
+                    urunBilgiAlani.classList.add('status-default'); // Varsayılan
+                    
                     // KRİTİK: Dropdown'ları oluştur (mevcut parti/renk değerlerini koruyarak)
                     updateVariantInputs(data);
                 } else {
                     // Eşleşme yok
-                    currentStokKod = stokKod;
-                    currentPartiNo = partiNo;
-                    currentRenk = renk;
-                    currentSeriNo = seriNo;
+                    urunBilgiAlani.classList.add('status-missing'); // KIRMIZI yap
                     
                     // Input alanlarını varsayılan değere dönüştür
                     updateVariantInputs({ parti_no: partiNo, renk: renk });
@@ -225,6 +252,7 @@
             })
             .catch(error => {
                 document.getElementById('urun_bilgi').innerText = `Arama Hatası: ${error.message}`;
+                urunBilgiAlani.classList.add('status-missing'); // KIRMIZI yap
             });
     }
 
@@ -309,7 +337,6 @@
             event.preventDefault(); 
         }
 
-        // KRİTİK: Güncel değerleri al (Input veya Select olabilir)
         const partiNoElement = document.getElementById('parti_no_input');
         const renkElement = document.getElementById('renk_input');
         
@@ -335,15 +362,12 @@
         if (!quickScanBtn) return;
         
         quickScanBtn.addEventListener('click', () => {
-            // Tarayıcı konteynerini görünür yap
             scannerContainer.style.display = 'block';
             
-            // html5QrCode nesnesini her seferinde yeniden oluştur
             const html5QrCode = new Html5Qrcode("scanner-container");
             
             const qrCodeSuccessCallback = (decodedText, decodedResult) => {
                 html5QrCode.stop().then(() => {
-                    // Başarılı tarama sonrası tarayıcıyı temizle
                     scannerContainer.innerHTML = '';
                     scannerContainer.style.display = 'none';
                     quickScanBtn.style.display = 'block'; 
@@ -364,8 +388,8 @@
                 .catch((err) => {
                     scannerContainer.innerHTML = `<p style="color:red;">Kamera Hatası: Lütfen kamera izinlerini kontrol edin veya Dosyadan Seç'i kullanın. Detay: ${err}</p>`;
                     console.error("Tarayıcı başlatılamadı:", err);
-                    scannerContainer.style.display = 'block'; // Hatayı göster
-                    quickScanBtn.style.display = 'block'; // Butonu geri getir
+                    scannerContainer.style.display = 'block'; 
+                    quickScanBtn.style.display = 'block'; 
                 });
         });
     }
