@@ -4,7 +4,10 @@ services:
     env: python
     buildCommand: 'pip install -r requirements.txt'
     preRunCommand: 'python manage.py collectstatic --noinput && python manage.py migrate' 
-    startCommand: '/usr/bin/env PATH="/opt/render/.local/bin:$PATH" gunicorn stock_project.wsgi'
+    
+    # START COMMAND'A PATH'İ EXPORT EDEN GÜVENLİ KOMUT
+    startCommand: 'export PATH=/usr/local/bin:$PATH && export PYTHONPATH=/opt/render/project/src && gunicorn stock_project.wsgi'
+    
     envVars:
       - key: PORT
         value: "10000"
