@@ -3,15 +3,18 @@
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Sayım Girişi | {{ sayim_emri.ad }}</title>
+    <title>Stok Sayım Girişi | {{ sayim_emri.ad }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        /* Sadece görünürlüğü artırmak için minimal CSS */
-        body { font-family: Arial, sans-serif; padding: 20px; }
-        input, button { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; }
+        /* CSS Düzeltilene Kadar Geçici Stil */
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        input[type="text"], input[type="number"], button { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; }
         .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; }
         .message.success { color: green; }
         .message.error { color: red; }
+        hr { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
+        .flex-container { display: flex; gap: 10px; margin-bottom: 10px; }
+        .flex-container > div { flex: 1; }
     </style>
 </head>
 <body>
@@ -20,13 +23,21 @@
         <p>Sayım Emri: <strong>{{ sayim_emri.ad }}</strong> (ID: {{ sayim_emri.pk }})</p>
         <p>Depo Kodu: <strong id="depo_kodu_gizli">{{ depo_kodu }}</strong></p>
         <p>Personel: <strong id="personel_adi_gizli">{{ personel_adi }}</strong></p>
+        <a href="{% url 'raporlama_onay' pk=sayim_emri.pk %}">Raporlama ve Onay Ekranına Git</a>
     </div>
 
-    <h2>1. Stok Arama (Barkod/QR veya Kod)</h2>
+    <h2>1. Stok Arama (Barkod/QR veya Kamera)</h2>
     
     <input type="text" id="barkod_input" placeholder="Barkod/QR kodunu okutun veya girin (Enter'a basın)">
     <small style="color: gray;">(Bu alan Seri No olarak önceliklendirilir.)</small>
     
+    <div class="flex-container">
+        <button id="camera-btn">📷 Kamera ile Çek</button>
+        <input type="file" id="image-input" accept="image/*" style="display: none;">
+        <button id="select-file-btn">📂 Dosyadan Seç</button>
+    </div>
+    <div id="ocr_status" class="message"></div>
+
     <hr>
 
     <h3>Veya Detaylı Giriş</h3>
@@ -37,7 +48,7 @@
     <button id="ara-btn">Stok Ara</button>
 
     <div id="urun_bilgi_alani" style="margin-top: 15px;">
-        <p>Ürün: <strong id="urun_bilgi">Arama yapılıyor...</strong></p>
+        <p>Ürün: <strong id="urun_bilgi">Stok kodu veya Barkod girin...</strong></p>
         <p>Sistem Stoğu: <strong id="sistem_stok_goster">0.00</strong></p>
         <p>Son Sayım: <strong id="last_sayim_goster">Bilinmiyor</strong></p>
     </div>
@@ -47,13 +58,13 @@
     <h2>2. Sayım Girişi</h2>
     
     <input type="number" id="miktar_input" placeholder="Sayım Miktarı (Örn: 1.00)">
-    <button id="sayim_kaydet_btn">Sayım Miktarını Ekle</button>
+    <button id="sayim_kaydet_btn">KAYDET (**ENTER**)</button>
     <p class="message" id="kayit_mesaji"></p>
     <p>Yeni Toplam Sayım: <strong id="yeni_toplam_goster">0.00</strong></p>
 
 
 <script>
-    // Django değişkenlerini yakala
+    // --- TEMEL TANIMLAR ---
     const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
     const DEPO_KODU = document.getElementById('depo_kodu_gizli').innerText.trim();
     const PERSONEL_ADI = document.getElementById('personel_adi_gizli').innerText.trim();
@@ -63,34 +74,37 @@
     const stokKodInput = document.getElementById('stok_kod_input');
     const partiNoInput = document.getElementById('parti_no_input');
     const renkInput = document.getElementById('renk_input');
-    const urunBilgi = document.getElementById('urun_bilgi');
-    const sistemStokGoster = document.getElementById('sistem_stok_goster');
-    const lastSayimGoster = document.getElementById('last_sayim_goster');
     const miktarInput = document.getElementById('miktar_input');
-    const kayitMesaji = document.getElementById('kayit_mesaji');
-    const yeniToplamGoster = document.getElementById('yeni_toplam_goster');
-
-    // Durum değişkenleri (Aramadan gelen güncel değerleri tutar)
+    const ocrStatus = document.getElementById('ocr_status');
+    
     let currentStokKod = '';
     let currentPartiNo = 'YOK';
     let currentRenk = 'YOK';
+    let currentSeriNo = 'YOK';
 
-    /**
-     * Arka uçtaki ajax_akilli_stok_ara fonksiyonunu çağırır.
-     * @param {string} seriNo - Seri No veya Barkod Ham Veri olarak kullanılır (views.py içinde önceliklendirilir).
-     * @param {string} stokKod - Stok Kodu
-     * @param {string} partiNo - Parti No
-     * @param {string} renk - Renk
-     * @param {string} depoKod - Depo Kodu
-     * @param {string} barkodHamVeri - Hızlı okuyucudan gelen ham veri (views.py'de seriNo'dan sonraki yedek).
-     */
+    // CSRF Token Fonksiyonu (Django POST için kritik)
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.startsWith(name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+    const CSRF_TOKEN = getCookie('csrftoken');
+
+
+    // --- HİBRİT ARAMA FONKSİYONU ---
     function akilliStokAra(seriNo, stokKod, partiNo, renk, depoKod, barkodHamVeri = '') {
-        urunBilgi.innerText = 'Arama yapılıyor...';
-        sistemStokGoster.innerText = '0.00';
-        lastSayimGoster.innerText = 'Bilinmiyor';
-        kayitMesaji.className = 'message';
-        kayitMesaji.innerText = '';
-        yeniToplamGoster.innerText = '0.00';
+        document.getElementById('urun_bilgi').innerText = 'Arama yapılıyor...';
+        document.getElementById('sistem_stok_goster').innerText = '0.00';
+        document.getElementById('last_sayim_goster').innerText = 'Bilinmiyor';
 
         const params = new URLSearchParams({
             seri_no: seriNo || 'YOK',
@@ -98,17 +112,16 @@
             parti_no: partiNo || 'YOK',
             renk: renk || 'YOK',
             depo_kod: depoKod,
-            barkod_ham_veri: barkodHamVeri // Yeni parametre
+            barkod_ham_veri: barkodHamVeri || 'YOK'
         });
 
-        fetch(`/ajax/akilli_stok_ara?${params.toString()}`)
+        fetch(`/ajax/akilli-stok-ara/?${params.toString()}`)
             .then(response => response.json())
             .then(data => {
-                urunBilgi.innerText = data.urun_bilgi;
-                lastSayimGoster.innerText = data.last_sayim;
+                document.getElementById('urun_bilgi').innerText = data.urun_bilgi;
+                document.getElementById('last_sayim_goster').innerText = data.last_sayim;
                 
                 if (data.found) {
-                    // Tam eşleşme bulundu
                     currentStokKod = data.stok_kod;
                     currentPartiNo = data.parti_no;
                     currentRenk = data.renk;
@@ -116,36 +129,78 @@
                     stokKodInput.value = data.stok_kod;
                     partiNoInput.value = data.parti_no;
                     renkInput.value = data.renk;
-                    sistemStokGoster.innerText = data.sistem_stok;
+                    document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
 
                 } else if (data.parti_varyantlar.length > 0 || data.renk_varyantlar.length > 0) {
-                    // Stok kodu ile varyantlar listelendi
                     currentStokKod = data.stok_kod;
                     currentPartiNo = partiNo;
                     currentRenk = renk;
-                    
-                    // Not: Bu kısımda kullanıcıya varyant seçme arayüzü gösterilebilir.
+                    // Hata: Varyant bulundu, tam eşleşme yok.
                 } else {
-                    // Stok bulunamadı, yeni stok olabilir
                     currentStokKod = stokKod;
                     currentPartiNo = partiNo;
                     currentRenk = renk;
                 }
             })
             .catch(error => {
-                urunBilgi.innerText = `Arama Hatası: ${error.message}`;
+                document.getElementById('urun_bilgi').innerText = `Arama Hatası: ${error.message}`;
             });
     }
 
-    // --- Olay Dinleyicileri ---
+    // --- GEMINI/OCR İŞLEMLERİ ---
+    function geminiOku(file) {
+        ocrStatus.className = 'message';
+        ocrStatus.innerText = '🔍 Resmi analiz ediyoruz (Gemini Vision)...';
 
-    // 1. Hızlı Barkod Okuyucu Dinleyicisi (Enter ile tetiklenir)
+        const formData = new FormData();
+        formData.append('image', file);
+        
+        fetch("{% url 'gemini_parti_oku' %}", {
+            method: 'POST',
+            headers: {
+                'X-CSRFToken': CSRF_TOKEN,
+            },
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                ocrStatus.className = 'message success';
+                ocrStatus.innerText = data.message;
+                
+                // Form alanlarını Gemini'dan gelen verilerle doldur
+                barkodInput.value = data.seri_no;
+                stokKodInput.value = data.stok_kod;
+                partiNoInput.value = data.parti_no;
+                renkInput.value = data.renk;
+
+                // 1. Adım: Form alanları doldu. 2. Adım: Arama fonksiyonunu tetikle.
+                akilliStokAra(
+                    data.seri_no, 
+                    data.stok_kod, 
+                    data.parti_no, 
+                    data.renk, 
+                    DEPO_KODU, 
+                    data.barkod_ham_veri
+                );
+            } else {
+                ocrStatus.className = 'message error';
+                ocrStatus.innerText = `OCR Hatası: ${data.message}`;
+            }
+        })
+        .catch(error => {
+            ocrStatus.className = 'message error';
+            ocrStatus.innerText = `Kritik Hata: Sunucuya ulaşılamadı. ${error.message}`;
+        });
+    }
+
+    // --- OLAY DİNLEYİCİLERİ ---
+
+    // 1. Hızlı Barkod Okuyucu Dinleyicisi
     barkodInput.addEventListener('keydown', function(event) {
         if (event.key === 'Enter') {
             event.preventDefault(); 
             const hamVeri = this.value.toUpperCase().trim();
-            this.value = ''; // Alanı bir sonraki okuma için temizle
-
             if (hamVeri) {
                 // Ham veriyi hem seriNo hem de barkodHamVeri olarak gönderiyoruz.
                 akilliStokAra(hamVeri, 'YOK', 'YOK', 'YOK', DEPO_KODU, hamVeri); 
@@ -159,22 +214,40 @@
         const partiNo = partiNoInput.value.toUpperCase().trim();
         const renk = renkInput.value.toUpperCase().trim();
 
-        akilliStokAra('YOK', stokKod, partiNo, renk, DEPO_KODU, 'YOK');
+        akilliStokAra(currentSeriNo, stokKod, partiNo, renk, DEPO_KODU, 'YOK');
     });
 
+    // 3. Kamera/Dosya Butonları
+    document.getElementById('select-file-btn').addEventListener('click', () => {
+        document.getElementById('image-input').click();
+    });
 
-    // 3. Sayım Kaydetme Düğmesi
+    document.getElementById('camera-btn').addEventListener('click', () => {
+        // Tarayıcının Kamera API'sini doğrudan tetiklemek için input'u kullanıyoruz
+        document.getElementById('image-input').setAttribute('capture', 'environment');
+        document.getElementById('image-input').click();
+    });
+
+    document.getElementById('image-input').addEventListener('change', function() {
+        if (this.files.length > 0) {
+            geminiOku(this.files[0]);
+        }
+        // Capture özelliğini sonraki dosya seçimleri için kaldır
+        this.removeAttribute('capture');
+    });
+
+    // 4. Sayım Kaydetme Düğmesi
     document.getElementById('sayim_kaydet_btn').addEventListener('click', function() {
         const miktar = miktarInput.value;
 
         if (!currentStokKod || currentStokKod === 'YOK') {
-            kayitMesaji.className = 'message error';
-            kayitMesaji.innerText = 'Lütfen önce geçerli bir stok bulun.';
+            document.getElementById('kayit_mesaji').className = 'message error';
+            document.getElementById('kayit_mesaji').innerText = 'Lütfen önce geçerli bir stok bulun.';
             return;
         }
         if (parseFloat(miktar) <= 0 || isNaN(parseFloat(miktar))) {
-            kayitMesaji.className = 'message error';
-            kayitMesaji.innerText = 'Miktar geçerli bir sayı olmalıdır (> 0).';
+            document.getElementById('kayit_mesaji').className = 'message error';
+            document.getElementById('kayit_mesaji').innerText = 'Miktar geçerli bir sayı olmalıdır (> 0).';
             return;
         }
 
@@ -187,41 +260,36 @@
             personel_adi: PERSONEL_ADI 
         };
 
-        // Arka uçtaki atomik kaydetme endpoint'ini çağır
-        fetch(`/ajax/sayim_kaydet/${SAYIM_EMRI_ID}/`, {
+        fetch(`/ajax/sayim-kaydet/${SAYIM_EMRI_ID}/`, {
             method: 'POST',
             headers: {
                 "Content-Type": "application/json",
-                // Django CSRF tokenı burada eklenmelidir. (Şablonunuzda eksik, ancak gerçek projede olmalı)
-                // "X-CSRFToken": getCookie('csrftoken') 
+                'X-CSRFToken': CSRF_TOKEN, 
             },
             body: JSON.stringify(data)
         })
         .then(res => res.json())
         .then(data => {
             if (data.success) {
-                kayitMesaji.className = 'message success';
-                kayitMesaji.innerText = data.message;
-                yeniToplamGoster.innerText = data.yeni_miktar;
-                miktarInput.value = ''; // Girişi temizle
+                document.getElementById('kayit_mesaji').className = 'message success';
+                document.getElementById('kayit_mesaji').innerText = data.message;
+                document.getElementById('yeni_toplam_goster').innerText = data.yeni_miktar;
+                miktarInput.value = ''; 
             } else {
-                kayitMesaji.className = 'message error';
-                kayitMesaji.innerText = data.message;
+                document.getElementById('kayit_mesaji').className = 'message error';
+                document.getElementById('kayit_mesaji').innerText = data.message;
             }
         })
         .catch(error => {
-            kayitMesaji.className = 'message error';
-            kayitMesaji.innerText = `Kayıt sırasında hata: ${error.message}`;
+            document.getElementById('kayit_mesaji').className = 'message error';
+            document.getElementById('kayit_mesaji').innerText = `Kayıt sırasında hata: ${error.message}`;
         });
     });
 
-    // Sayfa yüklendiğinde varsayılan arama (Opsiyonel, eğer URL'den geliyorsa)
+    // Sayfa yüklendiğinde bir ilk arama tetikle
     document.addEventListener('DOMContentLoaded', () => {
-        // İlk yüklemede tüm alanları boş bırakarak arama yap
         akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
     });
-
-    // NOT: CSRF token fonksiyonu burada eksiktir. Gerçek projede bunu eklemeyi unutmayın!
 </script>
 </body>
 </html>
