@@ -7,9 +7,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         /* SADE VE İŞLEVSEL TEMEL STİLLER */
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; background-color: #f4f7f6; }
         input[type="text"], input[type="number"], button, select { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; border-radius: 4px; }
+        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: white; border-radius: 4px; }
         .message.success { color: green; font-weight: bold; }
         .message.error { color: red; font-weight: bold; }
         hr { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
@@ -17,7 +17,6 @@
         .flex-container > div { flex: 1; }
         .section-header { margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
         button { cursor: pointer; background-color: #007bff; color: white; border: none; }
-        #scanner-container { display: none; margin-top: 10px; }
     </style>
 </head>
 <body>
@@ -32,31 +31,13 @@
     <h2>1. Stok Arama ve Veri Girişi</h2>
     
     <div class="info-box">
-        <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
-        <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
-        
-        <button id="quick-scan-btn" style="background-color: #007bff; color: white; margin-top: 5px;">
-            📸 QR/Barkod Tarayıcıyı Aç
-        </button>
-        <div id="scanner-container"></div>
+        <h3 class="section-header">A. Seri No / Barkod Girişi</h3>
+        <input type="text" id="barkod_input" placeholder="Seri No/Barkodu buraya girin (ENTER)">
+        <p style="font-size: 0.9em; color: gray;">(Otomatik arama için ENTER tuşunu kullanın.)</p>
     </div>
 
     <hr>
     
-    <div class="info-box">
-        <h3 class="section-header">B. Etiket Görüntüsü ile Giriş (Gemini/OCR)</h3>
-        <p style="font-size: 0.9em; color: #555;">(Karmaşık etiketlerden Stok, Parti ve Renk okuma)</p>
-        
-        <div class="flex-container">
-            <button id="camera-btn" style="background-color: #556B2F; color: white;">📷 Kamera ile Çek</button>
-            <input type="file" id="image-input" accept="image/*" style="display: none;">
-            <button id="select-file-btn" style="background-color: #8A2BE2; color: white;">📂 Dosyadan Seç</button>
-        </div>
-        <div id="ocr_status" class="message" style="margin-top: 5px;"></div>
-    </div>
-    
-    <hr>
-
     <h3 class="section-header">Veya Detaylı Giriş</h3>
     
     <div id="stok_kod_container">
@@ -87,7 +68,6 @@
 
 
 <script>
-    // Sayfa yüklendikten sonra tüm DOM ve olay dinleyicilerini kurmak için güvenli blok
     document.addEventListener('DOMContentLoaded', () => {
         // --- TEMEL TANIMLAR ---
         const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
@@ -98,12 +78,10 @@
         const barkodInput = document.getElementById('barkod_input');
         const stokKodInput = document.getElementById('stok_kod_input');
         const miktarInput = document.getElementById('miktar_input');
-        const ocrStatus = document.getElementById('ocr_status');
         
         const partiNoContainer = document.getElementById('parti_no_container');
         const renkContainer = document.getElementById('renk_container');
         const urunBilgiAlani = document.getElementById('urun_bilgi_alani');
-        const sistemStokGosterContainer = document.getElementById('sistem_stok_goster_container');
 
         let currentStokKod = '';
         let currentPartiNo = 'YOK';
@@ -228,53 +206,6 @@
                 });
         }
 
-        // --- GEMINI/OCR İŞLEMLERİ (Bölüm B) ---
-        // Hızlı ve Karmaşık tarama tek bu fonksiyonu çağırır, isQuickScan bayrağıyla ayrılır.
-        function geminiOku(file, isQuickScan = false) {
-            const statusElement = document.getElementById('ocr_status');
-            if (!statusElement) return;
-
-            statusElement.className = 'message';
-            statusElement.innerText = isQuickScan ? '🔍 Seri Numarası aranıyor (Hızlı Tarama)...' : '🔍 Resmi analiz ediyoruz (Gemini Vision)...';
-
-            const formData = new FormData();
-            formData.append('image', file);
-            
-            fetch("{% url 'gemini_parti_oku' %}", {
-                method: 'POST',
-                headers: {
-                    'X-CSRFToken': CSRF_TOKEN,
-                },
-                body: formData
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.success) {
-                    statusElement.className = 'message success';
-                    statusElement.innerText = isQuickScan ? `✅ Seri No Okundu: ${data.seri_no}. Hızlı Arama Başlatılıyor.` : data.message;
-                    
-                    // Hızlı Tarama ise, sadece Seri No'yu kullanıp hemen arama yap
-                    if (isQuickScan) {
-                        barkodInput.value = data.seri_no; 
-                        stokKodInput.value = 'YOK'; // Stok kodu boş bırakılır
-                        akilliStokAra(data.seri_no, 'YOK', 'YOK', 'YOK', DEPO_KODU, data.barkod_ham_veri);
-                    } else {
-                        // Karmaşık Tarama ise, tüm formları doldur ve arama yap
-                        barkodInput.value = data.seri_no; 
-                        stokKodInput.value = data.stok_kod;
-                        akilliStokAra(data.seri_no, data.stok_kod, data.parti_no, data.renk, DEPO_KODU, data.barkod_ham_veri);
-                    }
-                } else {
-                    statusElement.className = 'message error';
-                    statusElement.innerText = `OCR Hatası: ${data.message}`;
-                }
-            })
-            .catch(error => {
-                statusElement.className = 'message error';
-                statusElement.innerText = `Kritik Hata: Gemini Sunucusuna ulaşılamadı. ${error.message}`;
-            });
-        }
-
         // --- OLAY DİNLEYİCİLERİ ---
         
         // YENİ: Tüm arama inputları için ENTER/CHANGE dinleyicisi (DROPDOWN DÜZELTMESİ)
@@ -328,50 +259,25 @@
         }
 
 
-        // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU
-        function setupQuickScanListener() {
-            const quickScanBtn = document.getElementById('quick-scan-btn');
-            const imageInput = document.getElementById('image-input'); // Gemini'nin input'u
-            if (!quickScanBtn || !imageInput) return;
-            
-            quickScanBtn.addEventListener('click', () => {
-                // HIZLI TARAMA İÇİN: Gemini'nin güvenli kamera yolunu kullan, ancak işlerken "hızlı" olduğunu belirt.
-                
-                // 1. INPUT'a kamera açma bayrağını ekle
-                imageInput.setAttribute('capture', 'environment');
-                // 2. İşleyiciye "hızlı tarama" modunda olduğunu söyleyecek bayrağı ekle
-                imageInput.setAttribute('data-scan-mode', 'quick'); 
-                // 3. Kamerayı aç
-                imageInput.click();
-            });
-        }
-
         // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR)
         function setupGeminiListeners() {
-            const imageInput = document.getElementById('image-input');
-            if (!imageInput) return;
-
-            // Dosyadan Seç
+            // NOTE: Artık QR Butonu kaldırıldı, sadece standart Gemini butonları kaldı.
             document.getElementById('select-file-btn').addEventListener('click', () => {
-                imageInput.click();
+                document.getElementById('image-input').click();
             });
 
-            // Kamera ile Çek (Karmaşık etiketler için)
             document.getElementById('camera-btn').addEventListener('click', () => {
-                imageInput.setAttribute('capture', 'environment');
-                // HIZLI TARAMA DEĞİL: data-scan-mode bayrağını sil
-                imageInput.removeAttribute('data-scan-mode'); 
-                imageInput.click();
+                document.getElementById('image-input').setAttribute('capture', 'environment');
+                document.getElementById('image-input').click();
             });
 
             // Görüntü seçildiğinde/çekildiğinde Gemini'yi tetikle
-            imageInput.addEventListener('change', function() {
+            document.getElementById('image-input').addEventListener('change', function() {
                 if (this.files.length > 0) {
-                    const isQuickScan = this.getAttribute('data-scan-mode') === 'quick';
-                    geminiOku(this.files[0], isQuickScan); // Hızlı tarama bayrağını gönder
+                    // isQuickScan kaldırıldı, her zaman karmaşık analiz yapar
+                    geminiOku(this.files[0], false); 
                 }
                 this.removeAttribute('capture');
-                this.removeAttribute('data-scan-mode'); // Bayrağı temizle
             });
         }
 
@@ -440,7 +346,6 @@
 
         // Sayfa tamamen yüklendiğinde tüm olay dinleyicilerini kur ve ilk aramayı yap
         setupGeminiListeners();
-        setupQuickScanListener(); 
         setupAutoSearchListeners();
         
         akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
