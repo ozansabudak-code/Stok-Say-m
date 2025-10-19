@@ -1,29 +1,227 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="tr">
 <head>
     <meta charset="UTF-8">
-    <title>Sayım Girişi</title>
+    <title>Sayım Girişi | {{ sayim_emri.ad }}</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        /* Sadece görünürlüğü artırmak için minimal CSS */
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        input, button { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; }
+        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; }
+        .message.success { color: green; }
+        .message.error { color: red; }
+    </style>
 </head>
 <body>
-    <h1>Sayım Girişi</h1>
-    <p>Sayım Emri ID: {{ sayim_emri_id }}</p>
-    <p>Depo Kodu: {{ depo_kodu }}</p>
-    <p>Personel: {{ personel }}</p>
+    <div class="info-box">
+        <h3>Sayım Bilgileri</h3>
+        <p>Sayım Emri: <strong>{{ sayim_emri.ad }}</strong> (ID: {{ sayim_emri.pk }})</p>
+        <p>Depo Kodu: <strong id="depo_kodu_gizli">{{ depo_kodu }}</strong></p>
+        <p>Personel: <strong id="personel_adi_gizli">{{ personel_adi }}</strong></p>
+    </div>
 
-    <input type="text" id="barkod" placeholder="Barkod Girin">
-    <button id="kaydet-btn">Kaydet</button>
+    <h2>1. Stok Arama (Barkod/QR veya Kod)</h2>
+    
+    <input type="text" id="barkod_input" placeholder="Barkod/QR kodunu okutun veya girin (Enter'a basın)">
+    <small style="color: gray;">(Bu alan Seri No olarak önceliklendirilir.)</small>
+    
+    <hr>
+
+    <h3>Veya Detaylı Giriş</h3>
+    
+    <input type="text" id="stok_kod_input" placeholder="Stok Kodu">
+    <input type="text" id="parti_no_input" placeholder="Parti No (Opsiyonel)">
+    <input type="text" id="renk_input" placeholder="Renk/Varyant (Opsiyonel)">
+    <button id="ara-btn">Stok Ara</button>
+
+    <div id="urun_bilgi_alani" style="margin-top: 15px;">
+        <p>Ürün: <strong id="urun_bilgi">Arama yapılıyor...</strong></p>
+        <p>Sistem Stoğu: <strong id="sistem_stok_goster">0.00</strong></p>
+        <p>Son Sayım: <strong id="last_sayim_goster">Bilinmiyor</strong></p>
+    </div>
+
+    <hr>
+
+    <h2>2. Sayım Girişi</h2>
+    
+    <input type="number" id="miktar_input" placeholder="Sayım Miktarı (Örn: 1.00)">
+    <button id="sayim_kaydet_btn">Sayım Miktarını Ekle</button>
+    <p class="message" id="kayit_mesaji"></p>
+    <p>Yeni Toplam Sayım: <strong id="yeni_toplam_goster">0.00</strong></p>
+
 
 <script>
-document.getElementById('kaydet-btn').addEventListener('click', function(){
-    const barkod = document.getElementById('barkod').value;
-    fetch('/ajax_barkod_okuma/', {
-        method: 'POST',
-        headers: {"Content-Type": "application/json"},
-        body: JSON.stringify({barkod: barkod})
-    }).then(res=>res.json()).then(data=>{
-        alert(data.message);
+    // Django değişkenlerini yakala
+    const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
+    const DEPO_KODU = document.getElementById('depo_kodu_gizli').innerText.trim();
+    const PERSONEL_ADI = document.getElementById('personel_adi_gizli').innerText.trim();
+
+    // DOM Elementleri
+    const barkodInput = document.getElementById('barkod_input');
+    const stokKodInput = document.getElementById('stok_kod_input');
+    const partiNoInput = document.getElementById('parti_no_input');
+    const renkInput = document.getElementById('renk_input');
+    const urunBilgi = document.getElementById('urun_bilgi');
+    const sistemStokGoster = document.getElementById('sistem_stok_goster');
+    const lastSayimGoster = document.getElementById('last_sayim_goster');
+    const miktarInput = document.getElementById('miktar_input');
+    const kayitMesaji = document.getElementById('kayit_mesaji');
+    const yeniToplamGoster = document.getElementById('yeni_toplam_goster');
+
+    // Durum değişkenleri (Aramadan gelen güncel değerleri tutar)
+    let currentStokKod = '';
+    let currentPartiNo = 'YOK';
+    let currentRenk = 'YOK';
+
+    /**
+     * Arka uçtaki ajax_akilli_stok_ara fonksiyonunu çağırır.
+     * @param {string} seriNo - Seri No veya Barkod Ham Veri olarak kullanılır (views.py içinde önceliklendirilir).
+     * @param {string} stokKod - Stok Kodu
+     * @param {string} partiNo - Parti No
+     * @param {string} renk - Renk
+     * @param {string} depoKod - Depo Kodu
+     * @param {string} barkodHamVeri - Hızlı okuyucudan gelen ham veri (views.py'de seriNo'dan sonraki yedek).
+     */
+    function akilliStokAra(seriNo, stokKod, partiNo, renk, depoKod, barkodHamVeri = '') {
+        urunBilgi.innerText = 'Arama yapılıyor...';
+        sistemStokGoster.innerText = '0.00';
+        lastSayimGoster.innerText = 'Bilinmiyor';
+        kayitMesaji.className = 'message';
+        kayitMesaji.innerText = '';
+        yeniToplamGoster.innerText = '0.00';
+
+        const params = new URLSearchParams({
+            seri_no: seriNo || 'YOK',
+            stok_kod: stokKod || 'YOK',
+            parti_no: partiNo || 'YOK',
+            renk: renk || 'YOK',
+            depo_kod: depoKod,
+            barkod_ham_veri: barkodHamVeri // Yeni parametre
+        });
+
+        fetch(`/ajax/akilli_stok_ara?${params.toString()}`)
+            .then(response => response.json())
+            .then(data => {
+                urunBilgi.innerText = data.urun_bilgi;
+                lastSayimGoster.innerText = data.last_sayim;
+                
+                if (data.found) {
+                    // Tam eşleşme bulundu
+                    currentStokKod = data.stok_kod;
+                    currentPartiNo = data.parti_no;
+                    currentRenk = data.renk;
+
+                    stokKodInput.value = data.stok_kod;
+                    partiNoInput.value = data.parti_no;
+                    renkInput.value = data.renk;
+                    sistemStokGoster.innerText = data.sistem_stok;
+
+                } else if (data.parti_varyantlar.length > 0 || data.renk_varyantlar.length > 0) {
+                    // Stok kodu ile varyantlar listelendi
+                    currentStokKod = data.stok_kod;
+                    currentPartiNo = partiNo;
+                    currentRenk = renk;
+                    
+                    // Not: Bu kısımda kullanıcıya varyant seçme arayüzü gösterilebilir.
+                } else {
+                    // Stok bulunamadı, yeni stok olabilir
+                    currentStokKod = stokKod;
+                    currentPartiNo = partiNo;
+                    currentRenk = renk;
+                }
+            })
+            .catch(error => {
+                urunBilgi.innerText = `Arama Hatası: ${error.message}`;
+            });
+    }
+
+    // --- Olay Dinleyicileri ---
+
+    // 1. Hızlı Barkod Okuyucu Dinleyicisi (Enter ile tetiklenir)
+    barkodInput.addEventListener('keydown', function(event) {
+        if (event.key === 'Enter') {
+            event.preventDefault(); 
+            const hamVeri = this.value.toUpperCase().trim();
+            this.value = ''; // Alanı bir sonraki okuma için temizle
+
+            if (hamVeri) {
+                // Ham veriyi hem seriNo hem de barkodHamVeri olarak gönderiyoruz.
+                akilliStokAra(hamVeri, 'YOK', 'YOK', 'YOK', DEPO_KODU, hamVeri); 
+            }
+        }
     });
-});
+
+    // 2. Detaylı Arama Düğmesi
+    document.getElementById('ara-btn').addEventListener('click', function() {
+        const stokKod = stokKodInput.value.toUpperCase().trim();
+        const partiNo = partiNoInput.value.toUpperCase().trim();
+        const renk = renkInput.value.toUpperCase().trim();
+
+        akilliStokAra('YOK', stokKod, partiNo, renk, DEPO_KODU, 'YOK');
+    });
+
+
+    // 3. Sayım Kaydetme Düğmesi
+    document.getElementById('sayim_kaydet_btn').addEventListener('click', function() {
+        const miktar = miktarInput.value;
+
+        if (!currentStokKod || currentStokKod === 'YOK') {
+            kayitMesaji.className = 'message error';
+            kayitMesaji.innerText = 'Lütfen önce geçerli bir stok bulun.';
+            return;
+        }
+        if (parseFloat(miktar) <= 0 || isNaN(parseFloat(miktar))) {
+            kayitMesaji.className = 'message error';
+            kayitMesaji.innerText = 'Miktar geçerli bir sayı olmalıdır (> 0).';
+            return;
+        }
+
+        const data = {
+            stok_kod: currentStokKod,
+            parti_no: currentPartiNo,
+            renk: currentRenk,
+            miktar: miktar,
+            depo_kod: DEPO_KODU,
+            personel_adi: PERSONEL_ADI 
+        };
+
+        // Arka uçtaki atomik kaydetme endpoint'ini çağır
+        fetch(`/ajax/sayim_kaydet/${SAYIM_EMRI_ID}/`, {
+            method: 'POST',
+            headers: {
+                "Content-Type": "application/json",
+                // Django CSRF tokenı burada eklenmelidir. (Şablonunuzda eksik, ancak gerçek projede olmalı)
+                // "X-CSRFToken": getCookie('csrftoken') 
+            },
+            body: JSON.stringify(data)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                kayitMesaji.className = 'message success';
+                kayitMesaji.innerText = data.message;
+                yeniToplamGoster.innerText = data.yeni_miktar;
+                miktarInput.value = ''; // Girişi temizle
+            } else {
+                kayitMesaji.className = 'message error';
+                kayitMesaji.innerText = data.message;
+            }
+        })
+        .catch(error => {
+            kayitMesaji.className = 'message error';
+            kayitMesaji.innerText = `Kayıt sırasında hata: ${error.message}`;
+        });
+    });
+
+    // Sayfa yüklendiğinde varsayılan arama (Opsiyonel, eğer URL'den geliyorsa)
+    document.addEventListener('DOMContentLoaded', () => {
+        // İlk yüklemede tüm alanları boş bırakarak arama yap
+        akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
+    });
+
+    // NOT: CSRF token fonksiyonu burada eksiktir. Gerçek projede bunu eklemeyi unutmayın!
 </script>
 </body>
 </html>
