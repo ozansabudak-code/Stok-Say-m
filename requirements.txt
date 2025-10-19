@@ -139,3 +139,4 @@ wrapt==1.17.3
 xlsxwriter==3.2.9
 yarl==1.22.0
 psycopg
+gunicorn
