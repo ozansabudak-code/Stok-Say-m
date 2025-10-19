@@ -1,11 +1,15 @@
-# render.yaml (SADECE BAŞLATMA KOMUTU)
+# render.yaml (SON VE KESİN VERSİYON)
 services:
   - type: web
     name: Stok-1
     env: python
-    buildCommand: 'pip install -r requirements.txt' # DEĞİŞMEZ
-    # Start Command'dan apt-get komutlarını tamamen kaldırıyoruz:
-    startCommand: 'python manage.py collectstatic --noinput && python manage.py migrate && gunicorn stock_project.wsgi'
+    buildCommand: 'pip install -r requirements.txt'
+    
+    # Yeni: Start Command'dan önce çalışacak güvenli komutlar
+    preRunCommand: 'python manage.py collectstatic --noinput && python manage.py migrate' 
+    
+    # Start Command sadece uygulamayı başlatır
+    startCommand: 'gunicorn stock_project.wsgi'
     
     envVars:
       - key: PORT
