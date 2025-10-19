@@ -36,6 +36,7 @@
     <div class="info-box">
         <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
         <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
+        
         <button id="quick-scan-btn" style="background-color: #007bff; color: white; margin-top: 5px;">
             📸 QR/Barkod Tarayıcıyı Aç
         </button>
@@ -100,7 +101,6 @@
         const stokKodInput = document.getElementById('stok_kod_input');
         const miktarInput = document.getElementById('miktar_input');
         const ocrStatus = document.getElementById('ocr_status');
-        const scannerContainer = document.getElementById('scanner-container');
         
         const partiNoContainer = document.getElementById('parti_no_container');
         const renkContainer = document.getElementById('renk_container');
@@ -231,12 +231,13 @@
         }
 
         // --- GEMINI/OCR İŞLEMLERİ (Bölüm B) ---
-        function geminiOku(file) {
+        // Bu fonksiyon hem Karmaşık Etiket hem de Hızlı Seri No okumada kullanılır.
+        function geminiOku(file, isQuickScan = false) {
             const statusElement = document.getElementById('ocr_status');
             if (!statusElement) return;
 
             statusElement.className = 'message';
-            statusElement.innerText = '🔍 Resmi analiz ediyoruz (Gemini Vision)...';
+            statusElement.innerText = isQuickScan ? '🔍 Seri Numarası aranıyor (Hızlı Tarama)...' : '🔍 Resmi analiz ediyoruz (Gemini Vision)...';
 
             const formData = new FormData();
             formData.append('image', file);
@@ -252,19 +253,18 @@
             .then(data => {
                 if (data.success) {
                     statusElement.className = 'message success';
-                    statusElement.innerText = data.message;
+                    statusElement.innerText = isQuickScan ? `✅ Seri No Okundu: ${data.seri_no}. Arama Başlatılıyor.` : data.message;
                     
-                    barkodInput.value = data.seri_no; 
-                    stokKodInput.value = data.stok_kod;
-
-                    akilliStokAra(
-                        data.seri_no, 
-                        data.stok_kod, 
-                        data.parti_no,
-                        data.renk,
-                        DEPO_KODU, 
-                        data.barkod_ham_veri
-                    );
+                    // Hızlı Tarama ise, sadece Seri No'yu kullanıp hemen arama yap
+                    if (isQuickScan) {
+                        barkodInput.value = data.seri_no; 
+                        akilliStokAra(data.seri_no, 'YOK', 'YOK', 'YOK', DEPO_KODU, data.barkod_ham_veri);
+                    } else {
+                        // Karmaşık Tarama ise, tüm formları doldur ve arama yap
+                        barkodInput.value = data.seri_no; 
+                        stokKodInput.value = data.stok_kod;
+                        akilliStokAra(data.seri_no, data.stok_kod, data.parti_no, data.renk, DEPO_KODU, data.barkod_ham_veri);
+                    }
                 } else {
                     statusElement.className = 'message error';
                     statusElement.innerText = `OCR Hatası: ${data.message}`;
@@ -280,21 +280,15 @@
         
         // YENİ: Tüm arama inputları için ENTER/CHANGE dinleyicisi (DROPDOWN DÜZELTMESİ)
         function setupAutoSearchListeners() {
-            const allInputs = [barkodInput, document.getElementById('stok_kod_input'), 
-                               document.getElementById('parti_no_input'), 
-                               document.getElementById('renk_input')];
+            // [barkodInput, document.getElementById('stok_kod_input'), ...] bu değişkenler artık güvenli
+            const allInputs = [barkodInput, stokKodInput, document.getElementById('parti_no_input'), document.getElementById('renk_input')];
             
-            // Dinleyicileri temizle (Çift tetiklemeyi önlemek için)
+            // Dinleyicileri temizle ve kur
             allInputs.forEach(input => {
                 if(input) {
                     input.removeEventListener('keydown', handleSearchEnter);
                     input.removeEventListener('change', handleSearchEnter);
-                }
-            });
-            
-            // Yeni dinleyicileri kur
-            allInputs.forEach(input => {
-                if (input) {
+                    
                     if(input.tagName === 'INPUT') {
                         input.addEventListener('keydown', handleSearchEnter);
                     } else if (input.tagName === 'SELECT') {
@@ -329,35 +323,42 @@
         }
 
 
-        // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU
+        // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU (HIZLI MOD)
         function setupQuickScanListener() {
             const quickScanBtn = document.getElementById('quick-scan-btn');
-            const imageInput = document.getElementById('image-input'); // Gemini'nin input'u
+            const imageInput = document.getElementById('image-input'); 
             if (!quickScanBtn || !imageInput) return;
             
             quickScanBtn.addEventListener('click', () => {
-                // Güvenli HTML input yöntemini kullanarak kamerayı aç (Seri No okumak için)
+                // Hızlı tarama için Gemini'nin kamera input'unu kullan
                 imageInput.setAttribute('capture', 'environment');
+                imageInput.setAttribute('data-scan-mode', 'quick'); // Hızlı modu işaretle
                 imageInput.click();
             });
         }
 
         // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR)
         function setupGeminiListeners() {
+            const imageInput = document.getElementById('image-input');
+            if (!imageInput) return;
+
             document.getElementById('select-file-btn').addEventListener('click', () => {
-                document.getElementById('image-input').click();
+                imageInput.click();
             });
 
             document.getElementById('camera-btn').addEventListener('click', () => {
-                document.getElementById('image-input').setAttribute('capture', 'environment');
-                document.getElementById('image-input').click();
+                imageInput.setAttribute('capture', 'environment');
+                imageInput.click();
             });
 
-            document.getElementById('image-input').addEventListener('change', function() {
+            // Görüntü seçildiğinde/çekildiğinde Gemini'yi tetikle
+            imageInput.addEventListener('change', function() {
                 if (this.files.length > 0) {
-                    geminiOku(this.files[0]);
+                    const isQuickScan = this.getAttribute('data-scan-mode') === 'quick';
+                    geminiOku(this.files[0], isQuickScan); // Hızlı tarama bayrağını gönder
                 }
                 this.removeAttribute('capture');
+                this.removeAttribute('data-scan-mode'); // Bayrağı temizle
             });
         }
 
