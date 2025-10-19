@@ -16,7 +16,7 @@ from django.views.generic import ListView, CreateView, DetailView, TemplateView
 from django.urls import reverse_lazy
 # F ifadesini kullanabilmek için F eklendi
 from django.db import connection, transaction
-from django.db.models import Max, F # <--- F BURAYA EKLENDİ
+from django.db.models import Max, F 
 from django.utils import timezone
 from django.core.management import call_command
 
@@ -36,7 +36,7 @@ from google.genai.errors import APIError
 from .models import SayimEmri, Malzeme, SayimDetay, standardize_id_part, generate_unique_id
 from .forms import SayimGirisForm
 
-# --- GEMINI SABİTLERİ (DEĞİŞMEDİ) ---
+# --- GEMINI SABİTLERİ ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
 try:
@@ -52,7 +52,7 @@ except Exception:
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 
 
-# --- GÖRÜNÜMLER (VIEWS) (DEĞİŞMEDİ) ---
+# --- GÖRÜNÜMLER (VIEWS) ---
 class SayimEmirleriListView(ListView):
     model = SayimEmri
     template_name = 'sayim/sayim_emirleri.html'
@@ -117,7 +117,7 @@ class SayimGirisView(DetailView):
         context['gemini_available'] = GEMINI_AVAILABLE
         context['form'] = SayimGirisForm()
         return context
-# --- RAPORLAMA, ONAY VE ANALİZ VIEW'LARI (DEĞİŞMEDİ) ---
+# --- RAPORLAMA, ONAY VE ANALİZ VIEW'LARI ---
 
 class RaporlamaView(DetailView):
     model = SayimEmri
@@ -393,7 +393,7 @@ def reload_stok_data_from_excel(request):
             return JsonResponse({'success': False, 'message': f'Stok yüklenirken hata oluştu: {e}'})
 
     return JsonResponse({'success': False, 'message': 'Geçersiz metot.'}, status=400)
-# --- AJAX / Yardımcı Fonksiyonlar (DEĞİŞMEDİ) ---
+# --- AJAX / Yardımcı Fonksiyonlar ---
 
 def get_last_sayim_info(benzersiz_id):
     """Verilen benzersiz ID'ye ait son sayım bilgisini çeker."""
@@ -409,8 +409,28 @@ def get_last_sayim_info(benzersiz_id):
         }
     return None
 
+# --- HIZLI OCR YARDIMCI FONKSİYONU ---
+def quick_ocr_extract(img_tesseract):
+    """Görüntüyü hızla tarar ve en az 4 karakter uzunluğunda ilk belirgin metni dondurur."""
+    
+    # Görüntüden tüm metni çıkar
+    text = pytesseract.image_to_string(img_tesseract, lang='eng').upper()
+    
+    # Tüm boşlukları ve özel karakterleri kaldır
+    clean_text = ''.join(c for c in text if c.isalnum() or c.isspace()).strip()
+    
+    # Satır satır kontrol ederek ilk anlamlı kodu bulmaya çalış (Seri No/Stok Kodu)
+    for line in clean_text.split('\n'):
+        parts = line.split()
+        for part in parts:
+            if len(part) >= 4 and part.isalnum():
+                return standardize_id_part(part)
+                
+    return None
+
+
 # ####################################################################################
-# ⭐ OPTİMİZE EDİLMİŞ AKILLI ARAMA FONKSİYONU (Barkod Entegrasyonu Eklendi)
+# ⭐ OPTİMİZE EDİLMİŞ AKILLI ARAMA FONKSİYONU
 # ####################################################################################
 
 @csrf_exempt
@@ -427,7 +447,6 @@ def ajax_akilli_stok_ara(request):
     parti_no_raw = request.GET.get('parti_no', '')
     renk_raw = request.GET.get('renk', '')
     depo_kod_raw = request.GET.get('depo_kod', 'MERKEZ')
-    # 🚀 YENİ: Hem manuel hem de Gemini'den gelen barkod ham verisi
     barkod_ham_veri_raw = request.GET.get('barkod_ham_veri', '')
 
 
@@ -437,14 +456,12 @@ def ajax_akilli_stok_ara(request):
     parti_no = standardize_id_part(parti_no_raw)
     renk = standardize_id_part(renk_raw)
     depo_kod_s = standardize_id_part(depo_kod_raw)
-    barkod_ham_veri = standardize_id_part(barkod_ham_veri_raw) # Standartlaştır
+    barkod_ham_veri = standardize_id_part(barkod_ham_veri_raw)
 
 
     # 🚀 HİBRİT GÜÇLENDİRME: Seri No boşsa, Barkod Ham Verisini kullan.
-    # Bu, QR/Barkod okuyucudan gelen tek bir metin dizisinin Seri No gibi davranmasını sağlar.
     if seri_no == 'YOK' and barkod_ham_veri != 'YOK':
         seri_no = barkod_ham_veri
-        # Eğer stok kodu da boşsa, ham barkod verisini stok kodu olarak da dene
         if stok_kod == 'YOK':
             stok_kod = barkod_ham_veri
 
@@ -465,14 +482,12 @@ def ajax_akilli_stok_ara(request):
     # --- 1. Öncelik: Seri No Arama (Seri No veya Barkod Ham Verisi varsa) ---
     if seri_no != 'YOK' and len(seri_no) >= 3:
         try:
-            # Seri No aramasında tam eşleşme arıyoruz
             malzeme = Malzeme.objects.filter(
                 seri_no=seri_no,
                 lokasyon_kodu=depo_kod_s
             ).first()
 
             if malzeme:
-                # Seri No ile bulundu, Tam eşleşme olduğundan hemen dönüyoruz.
                 response_data['found'] = True
                 response_data['stok_kod'] = malzeme.malzeme_kodu
                 response_data['parti_no'] = malzeme.parti_no
@@ -485,7 +500,6 @@ def ajax_akilli_stok_ara(request):
 
                 return JsonResponse(response_data)
         except Exception:
-            # Seri No aramasında bir hata olursa (ör. seri_no alanı yoksa veya veritabanı hatası)
             pass
 
     # --- 2. Öncelik: Parti No / Tam Eşleşme Arama (Seri No başarısız olduysa) ---
@@ -494,7 +508,6 @@ def ajax_akilli_stok_ara(request):
         malzeme = Malzeme.objects.filter(benzersiz_id=benzersiz_id).first()
 
         if malzeme:
-            # Tam eşleşme ile bulundu.
             response_data['found'] = True
             response_data['urun_bilgi'] = f"Parti No ile tam eşleşme: {malzeme.malzeme_adi} ({malzeme.olcu_birimi}). Sistem: {malzeme.sistem_stogu:.2f}"
 
@@ -506,31 +519,25 @@ def ajax_akilli_stok_ara(request):
 
 
     # --- 3. Öncelik: Stok Kodu Bazlı Varyant Listeleme (Hız Optimizasyonu) ---
-    # Eğer Seri No veya Tam Eşleşme bulunamadıysa, Stok Koduna ait varyantları listeleriz.
     if stok_kod != 'YOK' and len(stok_kod) >= 3:
-
-        # ⭐ OPTİMİZASYON: Parti No ve Renk listesini tek sorguda çekme
         try:
             varyant_data = Malzeme.objects.filter(
                 malzeme_kodu=stok_kod,
                 lokasyon_kodu=depo_kod_s
-            ).values('parti_no', 'renk').distinct() # Tek sorgu ile hem parti hem renk çekilir
+            ).values('parti_no', 'renk').distinct()
         except Exception as e:
-            # Kritik DB hatası durumunda loglama yapılabilir.
             print(f"Varyant Listesi Çekme Hatası: {e}")
             varyant_data = []
 
         parti_set = set()
         renk_set = set()
 
-        # Python tarafında set'lere ayırma (Çok hızlı)
         for item in varyant_data:
             if item.get('parti_no'):
                 parti_set.add(item['parti_no'])
             if item.get('renk'):
                 renk_set.add(item['renk'])
 
-        # Sonuçları hazırlama
         parti_varyantlar = sorted(list(parti_set))
         renk_varyantlar = sorted(list(renk_set))
 
@@ -549,7 +556,6 @@ def ajax_akilli_stok_ara(request):
 def ajax_sayim_kaydet(request, sayim_emri_id):
     """
     AJAX ile sayım miktarını kaydeder; yeni stokları otomatik ekler ve mevcut miktarın üzerine atomik olarak ekler.
-    (Race Condition'ları önlemek için F ifadeleri kullanıldı.)
     """
     if request.method == 'POST':
         start_time = time.time()
@@ -656,13 +662,32 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
             return JsonResponse({'success': False, 'message': f'Beklenmedik bir hata oluştu: {e}'}, status=500)
 
 # ####################################################################################
-# ⭐ GÜNCELLENDİ: gemini_parti_oku (Barkod Ham Veri Çıkarma Eklendi)
+# ⭐ HIZ OPTİMİZASYONU: gemini_parti_oku (Koşullu Çağrı)
 # ####################################################################################
+
+def quick_ocr_extract(img_tesseract):
+    """Görüntüyü hızla tarar ve en az 4 karakter uzunluğunda ilk belirgin metni dondurur."""
+    
+    # Görüntüden tüm metni çıkar
+    text = pytesseract.image_to_string(img_tesseract, lang='eng').upper()
+    
+    # Tüm boşlukları ve özel karakterleri kaldır
+    clean_text = ''.join(c for c in text if c.isalnum() or c.isspace()).strip()
+    
+    # Satır satır kontrol ederek ilk anlamlı kodu bulmaya çalış (Seri No/Stok Kodu)
+    for line in clean_text.split('\n'):
+        parts = line.split()
+        for part in parts:
+            if len(part) >= 4 and part.isalnum():
+                return standardize_id_part(part)
+                
+    return None
 
 @csrf_exempt
 def gemini_parti_oku(request):
     """
-    Gemini Vision kullanarak etiket fotoğrafından Seri No, Stok Kodu, Parti No, Varyant ve BARKOD HAM METNİ okur.
+    Gemini Vision (koşullu) kullanarak etiket fotoğrafından veri okur.
+    Hızlı OCR başarılı olursa, Gemini Vision çağrısı atlanır.
     """
     if not GEMINI_AVAILABLE:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
@@ -693,15 +718,30 @@ def gemini_parti_oku(request):
                 return JsonResponse({'success': False, 'message': 'Görsel ön işleme sonrası bile 5MB sınırını aşıyor.'}, status=400)
 
             img_for_gemini = Image.open(buffer_compressed)
-            img_tesseract = img_for_gemini.convert('L')
+            img_tesseract = img_for_gemini.convert('L') # Hızlı OCR için hazırla
 
-            # PROMPT GÜNCELLENDİ (Barkod Ham Veri Eklendi)
+
+            # --- 1. ADIM: HIZLI OCR İLE DENEME (HIZ OPTİMİZASYONU) ---
+            quick_id = quick_ocr_extract(img_tesseract)
+            
+            if quick_id:
+                # Seri No/Hızlı Kod bulundu, Gemini'yi çağırmaya gerek yok.
+                return JsonResponse({
+                    'success': True,
+                    'seri_no': quick_id,
+                    'stok_kod': 'YOK', 
+                    'parti_no': 'YOK', 
+                    'renk': 'YOK', 
+                    'barkod_ham_veri': quick_id,
+                    'message': f'✅ HIZLI OKUMA BAŞARILI. Seri No bulundu: {quick_id}'
+                })
+
+
+            # --- 2. ADIM: GEMINI VİSİON İLE DEVAM ET ---
             prompt = (
-                "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Seri Numarası, Stok Kodu, Parti Numarası, Varyant (renk) **VE etiket üzerindeki QR kod/barkodun kodladığı ham metni** okumaktır. "
-                "Önemli Kurallar: 1. Tüm değerleri etiket üzerinde gördüğünüz ham metin olarak döndürün. 2. Eğer bir alan (özellikle Varyant veya Barkod Ham Veri) etikette kesinlikle yoksa veya okunamıyorsa, değeri sadece 'YOK' olarak döndürün. 3. Tüm yanıtı SADECE aşağıdaki JSON şemasına uygun döndürün."
+                "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Seri Numarası, Stok Kodu, Parti Numarası, Varyant (renk) VE etiket üzerindeki QR kod/barkodun kodladığı ham metni okumaktır. "
+                "Önemli Kurallar: 1. Tüm değerleri etiket üzerinde gördüğünüz ham metin olarak döndürün. 2. Eğer bir alan etikette kesinlikle yoksa veya okunamıyorsa, değeri sadece 'YOK' olarak döndürün. 3. Tüm yanıtı SADECE aşağıdaki JSON şemasına uygun döndürün."
             )
-
-            # SCHEMA GÜNCELLENDİ (Barkod Ham Veri Eklendi)
             response_schema = {
                 "type": "OBJECT",
                 "properties": {
@@ -709,11 +749,11 @@ def gemini_parti_oku(request):
                     "Stok Kodu": {"type": "STRING"},
                     "Parti No": {"type": "STRING"},
                     "Varyant": {"type": "STRING"},
-                    "Barkod Ham Veri": {"type": "STRING"} # <<< YENİ ALAN
+                    "Barkod Ham Veri": {"type": "STRING"}
                 }
             }
-
-            # --- 1. Adım: Gemini ile Oku (JSON Zorlaması) ---
+            
+            # --- Gemini API Çağrısı ---
             response = client.models.generate_content(
                 model='gemini-2.5-flash',
                 contents=[prompt, img_for_gemini],
@@ -724,51 +764,20 @@ def gemini_parti_oku(request):
             )
 
             try:
-                json_string = response.text.strip()
-                if json_string.startswith("```json"):
-                    json_string = json_string.strip("```json").strip()
-                if json_string.endswith("```"):
-                    json_string = json_string.strip("```").strip()
-
+                json_string = response.text.strip().strip("```json").strip("```").strip()
                 parsed_data = json.loads(json_string)
 
             except json.JSONDecodeError as e:
                 return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Lütfen etiketi net çekin. Hata: {e}', 'raw_text': response.text}, status=500)
 
-            # Seri No ve diğer bilgileri çek
-            seri_no_raw = parsed_data.get('Seri No', '')
-            stok_kod_raw = parsed_data.get('Stok Kodu', '')
-            parti_no_raw = parsed_data.get('Parti No', '')
-            varyant_raw = parsed_data.get('Varyant', '')
-            barkod_ham_veri_raw = parsed_data.get('Barkod Ham Veri', '') # <<< YENİ VERİ
+            # Verileri çek ve standartlaştır
+            seri_no = standardize_id_part(parsed_data.get('Seri No', ''))
+            stok_kod = standardize_id_part(parsed_data.get('Stok Kodu', ''))
+            parti_no = standardize_id_part(parsed_data.get('Parti No', ''))
+            varyant = standardize_id_part(parsed_data.get('Varyant', ''))
+            barkod_ham_veri = standardize_id_part(parsed_data.get('Barkod Ham Veri', ''))
 
-            seri_no = standardize_id_part(seri_no_raw)
-            stok_kod = standardize_id_part(stok_kod_raw)
-            parti_no = standardize_id_part(parti_no_raw)
-            varyant = varyant_raw.strip().upper()
-            barkod_ham_veri = standardize_id_part(barkod_ham_veri_raw) # Standartlaştır
-
-
-            # --- 2. Adım: Varyant Eksikse OCR ile Görüntüyü Taramayı Dene (Yedekleme) ---
-            if not varyant or varyant in ['...', '', 'YOK']:
-                text = pytesseract.image_to_string(img_tesseract, lang='tur').upper()
-                if 'VARYANT' in text:
-                    try:
-                        start_index = text.find('VARYANT')
-                        sub_text = text[start_index:].split('\n')[0].split(':')[1].strip() if ':' in text[start_index:].split('\n')[0] else text[start_index:].split('\n')[0].strip().replace('VARYANT', '').strip()
-
-                        if len(sub_text) > 2 and sub_text not in ['...', 'BILINMIYOR', 'YOK']:
-                            varyant = sub_text
-                    except:
-                        pass
-
-            # Son kontrol ve standartlaştırma
-            if not varyant or varyant in ['...', '']:
-                varyant = 'BILINMIYOR'
-            else:
-                varyant = standardize_id_part(varyant)
-
-            # Seri No boşsa, Barkod Ham Verisini kullanma önceliği (Eğer barkodun seri no/ürün kodu olduğu varsayılırsa)
+            # Seri no/Stok kod önceliği mantığı
             if seri_no == 'YOK' and barkod_ham_veri != 'YOK' and len(barkod_ham_veri) > 2:
                 seri_no = barkod_ham_veri
             elif stok_kod == 'YOK' and barkod_ham_veri != 'YOK' and len(barkod_ham_veri) > 2:
@@ -777,12 +786,12 @@ def gemini_parti_oku(request):
 
             return JsonResponse({
                 'success': True,
-                'seri_no': seri_no, # En çok eşleşme ihtimali olan değer
+                'seri_no': seri_no,
                 'stok_kod': stok_kod,
                 'parti_no': parti_no,
                 'renk': varyant,
-                'barkod_ham_veri': barkod_ham_veri, # Yeni: Eğer barkodun tek başına bir seri no/stok kodu olmadığı durumda kullanılabilir
-                'message': f'Veri başarıyla okundu. Seri No: {seri_no}, Stok Kodu: {stok_kod}, Parti No: {parti_no}, Varyant: {varyant}'
+                'barkod_ham_veri': barkod_ham_veri,
+                'message': f'✅ GEMINI ANALİZİ BAŞARILI. Seri No: {seri_no}, Stok Kodu: {stok_kod}'
             })
 
         except APIError as e:
