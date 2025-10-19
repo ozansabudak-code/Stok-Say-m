@@ -7,7 +7,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <script src="https://unpkg.com/html5-qrcode@2.3.9/html5-qrcode.min.js"></script>
     <style>
-        /* CSS Düzeltilene Kadar Geçici Stil */
+        /* SADECE TEMEL OKUNABİLİRLİK STİLLERİ */
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
         input[type="text"], input[type="number"], button, select { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; }
         .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; }
@@ -15,10 +15,7 @@
         .message.error { color: red; }
         hr { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
         .flex-container { display: flex; gap: 10px; margin-bottom: 10px; }
-        .flex-container > div { flex: 1; }
-        .section-header { margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
-        /* QR Tarayıcı alanını başlangıçta gizlemek için */
-        #scanner-container { display: none; margin-top: 10px; }
+        #scanner-container { display: none; margin-top: 10px; } /* Tarayıcı alanı görünmez kalmalı */
     </style>
 </head>
 <body>
@@ -35,7 +32,7 @@
     <div class="info-box">
         <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
         <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
-        <button id="quick-scan-btn" style="background-color: #007bff; color: white; margin-top: 5px;">
+        <button id="quick-scan-btn">
             📸 QR/Barkod Tarayıcıyı Aç
         </button>
         <div id="scanner-container"></div>
@@ -48,9 +45,9 @@
         <p style="font-size: 0.9em; color: #555;">(Karmaşık etiketlerden Stok, Parti ve Renk okuma)</p>
         
         <div class="flex-container">
-            <button id="camera-btn" style="background-color: #556B2F; color: white;">📷 Kamera ile Çek</button>
+            <button id="camera-btn">📷 Kamera ile Çek</button>
             <input type="file" id="image-input" accept="image/*" style="display: none;">
-            <button id="select-file-btn" style="background-color: #8A2BE2; color: white;">📂 Dosyadan Seç</button>
+            <button id="select-file-btn">📂 Dosyadan Seç</button>
         </div>
         <div id="ocr_status" class="message" style="margin-top: 5px;"></div>
     </div>
@@ -232,7 +229,7 @@
         // --- GEMINI/OCR İŞLEMLERİ (Bölüm B) ---
         function geminiOku(file) {
             const statusElement = document.getElementById('ocr_status');
-            if (!statusElement) return; // Güvenlik kontrolü
+            if (!statusElement) return;
 
             statusElement.className = 'message';
             statusElement.innerText = '🔍 Resmi analiz ediyoruz (Gemini Vision)...';
