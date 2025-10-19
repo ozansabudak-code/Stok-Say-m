@@ -430,7 +430,7 @@ def quick_ocr_extract(img_tesseract):
 
 
 # ####################################################################################
-# ⭐ OPTİMİZE EDİLMİŞ AKILLI ARAMA FONKSİYONU
+# ⭐ OPTİMİZE EDİLMİŞ AKILLI ARAMA FONKSİYONU (views.py)
 # ####################################################################################
 
 @csrf_exempt
@@ -493,6 +493,7 @@ def ajax_akilli_stok_ara(request):
                 response_data['parti_no'] = malzeme.parti_no
                 response_data['renk'] = malzeme.renk
                 response_data['urun_bilgi'] = f"Seri No ile bulundu: {malzeme.malzeme_adi} ({malzeme.olcu_birimi}). Sistem: {malzeme.sistem_stogu:.2f}"
+                response_data['sistem_stok'] = f"{malzeme.sistem_stogu:.2f}" # Yeni eklendi
 
                 last_sayim_info = get_last_sayim_info(malzeme.benzersiz_id)
                 if last_sayim_info:
@@ -509,7 +510,9 @@ def ajax_akilli_stok_ara(request):
 
         if malzeme:
             response_data['found'] = True
+            response_data['stok_kod'] = malzeme.malzeme_kodu # Geri dönen Stok Kodunu Güncelle
             response_data['urun_bilgi'] = f"Parti No ile tam eşleşme: {malzeme.malzeme_adi} ({malzeme.olcu_birimi}). Sistem: {malzeme.sistem_stogu:.2f}"
+            response_data['sistem_stok'] = f"{malzeme.sistem_stogu:.2f}" # Yeni eklendi
 
             last_sayim_info = get_last_sayim_info(benzersiz_id)
             if last_sayim_info:
@@ -695,6 +698,9 @@ def gemini_parti_oku(request):
     if request.method == 'POST' and request.FILES.get('image'):
 
         uploaded_file = request.FILES['image']
+        
+        # Hızlı tarama bayrağını yakala (JavaScript'ten geliyorsa)
+        is_quick_scan = request.POST.get('is_quick_scan') == 'true'
 
         # YÜKSEK ÇÖZÜNÜRLÜKLÜ GÖRSELİ OKUMA VE ÖN İŞLEME
         try:
@@ -722,6 +728,7 @@ def gemini_parti_oku(request):
 
 
             # --- 1. ADIM: HIZLI OCR İLE DENEME (HIZ OPTİMİZASYONU) ---
+            # Hızlı tarama modundaysak, sadece temel metin okumayı dene.
             quick_id = quick_ocr_extract(img_tesseract)
             
             if quick_id:
@@ -735,9 +742,18 @@ def gemini_parti_oku(request):
                     'barkod_ham_veri': quick_id,
                     'message': f'✅ HIZLI OKUMA BAŞARILI. Seri No bulundu: {quick_id}'
                 })
+            
+            # Eğer hızlı modda bile OCR bir şey bulamadıysa VEYA karmaşık tarama isteniyorsa, Gemini'ye devam et
+            if is_quick_scan and not quick_id:
+                # Hızlı modda (QR butonu), OCR'ın bulamayıp Gemini'nin yavaşça bulmasını beklemek mantıksız. Hata dön.
+                return JsonResponse({
+                    'success': False, 
+                    'message': 'Hızlı tarama başarısız oldu. Lütfen etiketi yaklaştırın.',
+                    'seri_no': '', 'stok_kod': '', 'parti_no': '', 'renk': '', 'barkod_ham_veri': ''
+                })
 
 
-            # --- 2. ADIM: GEMINI VİSİON İLE DEVAM ET ---
+            # --- 2. ADIM: GEMINI VİSİON İLE DEVAM ET (Sadece Karmaşık Etiketler İçin) ---
             prompt = (
                 "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Seri Numarası, Stok Kodu, Parti Numarası, Varyant (renk) VE etiket üzerindeki QR kod/barkodun kodladığı ham metni okumaktır. "
                 "Önemli Kurallar: 1. Tüm değerleri etiket üzerinde gördüğünüz ham metin olarak döndürün. 2. Eğer bir alan etikette kesinlikle yoksa veya okunamıyorsa, değeri sadece 'YOK' olarak döndürün. 3. Tüm yanıtı SADECE aşağıdaki JSON şemasına uygun döndürün."

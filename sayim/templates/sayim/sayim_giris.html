@@ -5,12 +5,11 @@
     <meta charset="UTF-8">
     <title>Stok Sayım Girişi | {{ sayim_emri.ad }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <script src="https://unpkg.com/html5-qrcode@2.3.9/html5-qrcode.min.js"></script>
     <style>
         /* SADE VE İŞLEVSEL TEMEL STİLLER */
-        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; background-color: #f4f7f6; }
+        body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; }
         input[type="text"], input[type="number"], button, select { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: white; border-radius: 4px; }
+        .info-box { border: 1px solid #ccc; padding: 10px; margin-bottom: 20px; background-color: #f9f9f9; border-radius: 4px; }
         .message.success { color: green; font-weight: bold; }
         .message.error { color: red; font-weight: bold; }
         hr { border: 0; border-top: 1px solid #ccc; margin: 20px 0; }
@@ -18,7 +17,6 @@
         .flex-container > div { flex: 1; }
         .section-header { margin-top: 15px; margin-bottom: 10px; border-bottom: 1px solid #ddd; padding-bottom: 5px; }
         button { cursor: pointer; background-color: #007bff; color: white; border: none; }
-        /* QR Tarayıcı alanını başlangıçta gizliyoruz */
         #scanner-container { display: none; margin-top: 10px; }
     </style>
 </head>
@@ -231,7 +229,7 @@
         }
 
         // --- GEMINI/OCR İŞLEMLERİ (Bölüm B) ---
-        // Bu fonksiyon hem Karmaşık Etiket hem de Hızlı Seri No okumada kullanılır.
+        // Hızlı ve Karmaşık tarama tek bu fonksiyonu çağırır, isQuickScan bayrağıyla ayrılır.
         function geminiOku(file, isQuickScan = false) {
             const statusElement = document.getElementById('ocr_status');
             if (!statusElement) return;
@@ -253,11 +251,12 @@
             .then(data => {
                 if (data.success) {
                     statusElement.className = 'message success';
-                    statusElement.innerText = isQuickScan ? `✅ Seri No Okundu: ${data.seri_no}. Arama Başlatılıyor.` : data.message;
+                    statusElement.innerText = isQuickScan ? `✅ Seri No Okundu: ${data.seri_no}. Hızlı Arama Başlatılıyor.` : data.message;
                     
                     // Hızlı Tarama ise, sadece Seri No'yu kullanıp hemen arama yap
                     if (isQuickScan) {
                         barkodInput.value = data.seri_no; 
+                        stokKodInput.value = 'YOK'; // Stok kodu boş bırakılır
                         akilliStokAra(data.seri_no, 'YOK', 'YOK', 'YOK', DEPO_KODU, data.barkod_ham_veri);
                     } else {
                         // Karmaşık Tarama ise, tüm formları doldur ve arama yap
@@ -280,15 +279,21 @@
         
         // YENİ: Tüm arama inputları için ENTER/CHANGE dinleyicisi (DROPDOWN DÜZELTMESİ)
         function setupAutoSearchListeners() {
-            // [barkodInput, document.getElementById('stok_kod_input'), ...] bu değişkenler artık güvenli
-            const allInputs = [barkodInput, stokKodInput, document.getElementById('parti_no_input'), document.getElementById('renk_input')];
+            const allInputs = [barkodInput, document.getElementById('stok_kod_input'), 
+                               document.getElementById('parti_no_input'), 
+                               document.getElementById('renk_input')];
             
-            // Dinleyicileri temizle ve kur
+            // Dinleyicileri temizle (Çift tetiklemeyi önlemek için)
             allInputs.forEach(input => {
                 if(input) {
                     input.removeEventListener('keydown', handleSearchEnter);
                     input.removeEventListener('change', handleSearchEnter);
-                    
+                }
+            });
+            
+            // Yeni dinleyicileri kur
+            allInputs.forEach(input => {
+                if (input) {
                     if(input.tagName === 'INPUT') {
                         input.addEventListener('keydown', handleSearchEnter);
                     } else if (input.tagName === 'SELECT') {
@@ -323,16 +328,20 @@
         }
 
 
-        // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU (HIZLI MOD)
+        // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU
         function setupQuickScanListener() {
             const quickScanBtn = document.getElementById('quick-scan-btn');
-            const imageInput = document.getElementById('image-input'); 
+            const imageInput = document.getElementById('image-input'); // Gemini'nin input'u
             if (!quickScanBtn || !imageInput) return;
             
             quickScanBtn.addEventListener('click', () => {
-                // Hızlı tarama için Gemini'nin kamera input'unu kullan
+                // HIZLI TARAMA İÇİN: Gemini'nin güvenli kamera yolunu kullan, ancak işlerken "hızlı" olduğunu belirt.
+                
+                // 1. INPUT'a kamera açma bayrağını ekle
                 imageInput.setAttribute('capture', 'environment');
-                imageInput.setAttribute('data-scan-mode', 'quick'); // Hızlı modu işaretle
+                // 2. İşleyiciye "hızlı tarama" modunda olduğunu söyleyecek bayrağı ekle
+                imageInput.setAttribute('data-scan-mode', 'quick'); 
+                // 3. Kamerayı aç
                 imageInput.click();
             });
         }
@@ -342,12 +351,16 @@
             const imageInput = document.getElementById('image-input');
             if (!imageInput) return;
 
+            // Dosyadan Seç
             document.getElementById('select-file-btn').addEventListener('click', () => {
                 imageInput.click();
             });
 
+            // Kamera ile Çek (Karmaşık etiketler için)
             document.getElementById('camera-btn').addEventListener('click', () => {
                 imageInput.setAttribute('capture', 'environment');
+                // HIZLI TARAMA DEĞİL: data-scan-mode bayrağını sil
+                imageInput.removeAttribute('data-scan-mode'); 
                 imageInput.click();
             });
 
