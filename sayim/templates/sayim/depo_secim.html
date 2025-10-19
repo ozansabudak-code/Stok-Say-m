@@ -29,15 +29,12 @@
     </div>
 
 <script>
-    document.getElementById('depo-form').addEventListener('submit', function(e) {
-        e.preventDefault();
-        const depoKodu = document.getElementById('depo-select').value;
-        const sayimEmriId = {{ sayim_emri_id }};
-        
-        // KRİTİK DÜZELTME: Doğrudan Sayım Girişi'ne gitmek yerine,
-        // önce Personel Login sayfasına yönlendiriyoruz.
-        window.location.href = `/login-personel/${sayimEmriId}/${depoKodu}/`;
-    });
+document.getElementById('depo-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const depoKodu = document.getElementById('depo-select').value;
+    const sayimEmriId = {{ sayim_emri_id }};
+    window.location.href = `/login-personel/${sayimEmriId}/${depoKodu}/`;
+});
 </script>
 </body>
 </html>
