@@ -5,80 +5,26 @@
     <title>Personel Girişi</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
-        /* Genel Konumlandırma */
-        body { 
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-            background-color: #f4f7f6; 
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-        }
-        /* Kart Stili */
-        .login-container {
-            background-color: white;
-            padding: 30px;
-            border-radius: 10px;
-            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-            width: 100%;
-            max-width: 350px;
-            text-align: center;
-        }
-        h1 {
-            color: #28a745;
-            border-bottom: 2px solid #28a745;
-            padding-bottom: 10px;
-            margin-bottom: 20px;
-            font-size: 1.8em;
-        }
-        p {
-            color: #6c757d;
-            font-size: 0.9em;
-            margin-bottom: 20px;
-        }
-        /* Input ve Buton Stilleri */
-        input[type="text"] {
-            padding: 12px;
-            margin: 10px 0 20px;
-            width: calc(100% - 24px); 
-            border: 1px solid #c0c0c0;
-            border-radius: 6px;
-            font-size: 1em;
-            box-sizing: content-box; 
-        }
-        button {
-            background-color: #28a745; /* Yeşil */
-            color: white;
-            border: none;
-            padding: 12px 0;
-            border-radius: 6px;
-            cursor: pointer;
-            width: 100%;
-            font-size: 1.1em;
-            transition: background-color 0.3s;
-        }
-        button:hover {
-            background-color: #218838;
-        }
+        /* Sadece temel okunabilirlik stilleri kaldı */
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        input[type="text"], button { padding: 10px; margin: 5px 0; display: block; width: 100%; box-sizing: border-box; }
+        h1 { margin-bottom: 10px; }
     </style>
 </head>
 <body>
-    <div class="login-container">
-        <h1>Personel Girişi</h1>
+    <h1>Personel Girişi</h1>
+    
+    <p>Emir: {{ sayim_emri_id }} | Depo: {{ depo_kodu }}</p>
+    
+    <form method="POST" action="{% url 'set_personel_session' %}">
+        {% csrf_token %} 
         
-        <p>Emir: {{ sayim_emri_id }} | Depo: {{ depo_kodu }}</p>
+        <input type="text" name="personel_adi" placeholder="Personel Adınız" required>
         
-        <form method="POST" action="{% url 'set_personel_session' %}">
-            {% csrf_token %} 
-            
-            <input type="text" name="personel_adi" placeholder="Personel Adınız" required>
-            
-            <input type="hidden" name="sayim_emri_id" value="{{ sayim_emri_id }}">
-            <input type="hidden" name="depo_kodu" value="{{ depo_kodu }}">
-            
-            <button type="submit">Oturumu Başlat</button>
-        </form>
-    </div>
+        <input type="hidden" name="sayim_emri_id" value="{{ sayim_emri_id }}">
+        <input type="hidden" name="depo_kodu" value="{{ depo_kodu }}">
+        
+        <button type="submit">Oturumu Başlat</button>
+    </form>
 </body>
 </html>
