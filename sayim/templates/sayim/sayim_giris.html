@@ -126,33 +126,30 @@
     const CSRF_TOKEN = getCookie('csrftoken');
 
 
-    // --- YENİ: VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
-    // Bu fonksiyon, Parti ve Renk inputlarını Dropdown'a dönüştürür.
+    // --- VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
     function updateVariantInputs(data) {
         const createInput = (id, placeholder, value) => 
             `<input type="text" id="${id}" placeholder="${placeholder}" value="${value || ''}">`;
         
-        // KRİTİK: Dinamik elementleri yeniden oluştururken, onlara atıfta bulunan değişkenleri güncelle
-        let parti_no_input_ref;
-        let renk_input_ref;
-
         // 1. Parti No için
         if (data.parti_varyantlar && data.parti_varyantlar.length > 0) {
             let options = data.parti_varyantlar.map(p => `<option value="${p}">${p}</option>`).join('');
+            const selectedParti = data.parti_no || data.parti_varyantlar[0];
+            options = `<option value="${selectedParti}" selected>${selectedParti}</option>` + options.replace(`<option value="${selectedParti}">`, '').replace(`</option>`, '');
             partiNoContainer.innerHTML = `<select id="parti_no_input">${options}</select>`;
         } else {
             partiNoContainer.innerHTML = createInput('parti_no_input', 'Parti No (Opsiyonel)', data.parti_no);
         }
-        parti_no_input_ref = document.getElementById('parti_no_input');
 
         // 2. Renk/Varyant için
         if (data.renk_varyantlar && data.renk_varyantlar.length > 0) {
             let options = data.renk_varyantlar.map(r => `<option value="${r}">${r}</option>`).join('');
+            const selectedRenk = data.renk || data.renk_varyantlar[0];
+            options = `<option value="${selectedRenk}" selected>${selectedRenk}</option>` + options.replace(`<option value="${selectedRenk}">`, '').replace(`</option>`, '');
             renkContainer.innerHTML = `<select id="renk_input">${options}</select>`;
         } else {
             renkContainer.innerHTML = createInput('renk_input', 'Renk/Varyant (Opsiyonel)', data.renk);
         }
-        renk_input_ref = document.getElementById('renk_input');
         
         // Yeni DOM elementleri oluşturulduğu için, onlara ENTER dinleyicilerini yeniden kur
         setupAutoSearchListeners(); 
@@ -186,17 +183,18 @@
                 document.getElementById('urun_bilgi').innerText = data.urun_bilgi;
                 document.getElementById('last_sayim_goster').innerText = data.last_sayim;
                 
+                // Kayıt için kullanılacak global değişkenleri güncelle
+                currentStokKod = data.stok_kod;
+                currentPartiNo = data.parti_no;
+                currentRenk = data.renk;
+                currentSeriNo = seriNo;
+                
                 if (data.found) {
-                    // Tam eşleşme bulundu: Input alanlarını bulgularla güncelle
-                    currentStokKod = data.stok_kod;
-                    currentPartiNo = data.parti_no;
-                    currentRenk = data.renk;
-                    currentSeriNo = seriNo;
-
+                    // Tam eşleşme bulundu
                     stokKodInput.value = data.stok_kod;
                     document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
 
-                    // Dropdown'ları normal input'a dönüştür
+                    // Dropdown'ları normal input'a dönüştür (Eşleşen parti/renk değeri ile)
                     updateVariantInputs({ parti_no: data.parti_no, renk: data.renk });
 
                 } else if (data.parti_varyantlar && data.parti_varyantlar.length > 0 || data.renk_varyantlar && data.renk_varyantlar.length > 0) {
@@ -206,10 +204,10 @@
                     currentRenk = renk;
                     currentSeriNo = seriNo;
 
-                    // KRİTİK: Dropdown'ları oluştur
+                    // KRİTİK: Dropdown'ları oluştur (mevcut parti/renk değerlerini koruyarak)
                     updateVariantInputs(data);
                 } else {
-                    // Eşleşme yok, sadece manuel alanları güncelle
+                    // Eşleşme yok
                     currentStokKod = stokKod;
                     currentPartiNo = partiNo;
                     currentRenk = renk;
@@ -219,7 +217,7 @@
                     updateVariantInputs({ parti_no: partiNo, renk: renk });
                 }
                 
-                // Kayıt için kullanılan current değerlerini, eğer varsa, güncel Dropdown/Input değerleriyle senkronize et
+                // Güncel Dropdown/Input değerleriyle current değerleri senkronize et
                 const partiNoElement = document.getElementById('parti_no_input');
                 const renkElement = document.getElementById('renk_input');
                 currentPartiNo = partiNoElement.value.toUpperCase().trim();
@@ -256,12 +254,11 @@
                 stokKodInput.value = data.stok_kod;
 
                 // 2. Adım: Arama fonksiyonunu tetikle
-                // Parti ve Renk inputları zaten dinamik olarak ayarlanacak
                 akilliStokAra(
                     data.seri_no, 
                     data.stok_kod, 
-                    data.parti_no, // Gemini'dan gelen ilk parti değeri
-                    data.renk,     // Gemini'dan gelen ilk renk değeri
+                    data.parti_no,
+                    data.renk,
                     DEPO_KODU, 
                     data.barkod_ham_veri
                 );
@@ -278,20 +275,14 @@
 
     // --- OLAY DİNLEYİCİLERİ ---
     
-    // YENİ: Tüm arama inputları için ENTER tuşu dinleyicisi (DROPDOWN DÜZELTMESİ)
+    // YENİ: Tüm arama inputları için ENTER/CHANGE dinleyicisi (DROPDOWN DÜZELTMESİ)
     function setupAutoSearchListeners() {
-        // Dinlenmesi gereken input'lar ve select'ler
-        const inputs = [barkodInput, stokKodInput];
+        const allInputs = [barkodInput, document.getElementById('stok_kod_input'), 
+                           document.getElementById('parti_no_input'), 
+                           document.getElementById('renk_input')];
         
-        // Dinamik olarak oluşturulan Parti ve Renk alanlarını al
-        const partiInput = document.getElementById('parti_no_input');
-        const renkInput = document.getElementById('renk_input');
-        
-        if (partiInput) inputs.push(partiInput);
-        if (renkInput) inputs.push(renkInput);
-        
-        // Dinleyicileri temizle (Özellikle updateVariantInputs sonrası çift tetiklemeyi önlemek için)
-        inputs.forEach(input => {
+        // Dinleyicileri temizle (Çift tetiklemeyi önlemek için)
+        allInputs.forEach(input => {
             if(input) {
                 input.removeEventListener('keydown', handleSearchEnter);
                 input.removeEventListener('change', handleSearchEnter);
@@ -299,14 +290,11 @@
         });
         
         // Yeni dinleyicileri kur
-        inputs.forEach(input => {
+        allInputs.forEach(input => {
             if (input) {
-                // Input alanları için ENTER tuşunu dinle
                 if(input.tagName === 'INPUT') {
                     input.addEventListener('keydown', handleSearchEnter);
-                } 
-                // Select/Dropdown alanları için değişim (change) olayını dinle
-                else if (input.tagName === 'SELECT') {
+                } else if (input.tagName === 'SELECT') {
                     input.addEventListener('change', handleSearchEnter);
                 }
             }
@@ -321,16 +309,21 @@
             event.preventDefault(); 
         }
 
-        const currentPartiNo = document.getElementById('parti_no_input').value.toUpperCase().trim();
-        const currentRenk = document.getElementById('renk_input').value.toUpperCase().trim();
+        // KRİTİK: Güncel değerleri al (Input veya Select olabilir)
+        const partiNoElement = document.getElementById('parti_no_input');
+        const renkElement = document.getElementById('renk_input');
+        
+        const currentPartiNo = partiNoElement.value.toUpperCase().trim();
+        const currentRenk = renkElement.value.toUpperCase().trim();
         const currentStokKod = stokKodInput.value.toUpperCase().trim();
         const currentSeriNo = barkodInput.value.toUpperCase().trim();
         
-        if (event.target.id === 'barkod_input' || event.target.tagName === 'SELECT') {
-           // Seri No veya Dropdown değiştiyse, en yüksek öncelikli olan Seri No ile ara
-           akilliStokAra(currentSeriNo, 'YOK', currentPartiNo, currentRenk, DEPO_KODU, currentSeriNo);
+        
+        if (event.target.id === 'barkod_input') {
+           // Seri No input'u ENTER ile tetiklenirse, onu Seri No/Ham Veri olarak öncelikli ara
+           akilliStokAra(currentSeriNo, 'YOK', 'YOK', 'YOK', DEPO_KODU, currentSeriNo);
         } else {
-           // Stok Kodu, Parti No veya Renk input'u değiştiyse (Enter ile)
+           // Stok Kodu, Parti No veya Renk input'u/select'i değiştiyse
            akilliStokAra('YOK', currentStokKod, currentPartiNo, currentRenk, DEPO_KODU, 'YOK');
         }
     }
@@ -345,6 +338,7 @@
             // Tarayıcı konteynerini görünür yap
             scannerContainer.style.display = 'block';
             
+            // html5QrCode nesnesini her seferinde yeniden oluştur
             const html5QrCode = new Html5Qrcode("scanner-container");
             
             const qrCodeSuccessCallback = (decodedText, decodedResult) => {
@@ -376,13 +370,33 @@
         });
     }
 
+    // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR)
+    function setupGeminiListeners() {
+        document.getElementById('select-file-btn').addEventListener('click', () => {
+            document.getElementById('image-input').click();
+        });
+
+        document.getElementById('camera-btn').addEventListener('click', () => {
+            document.getElementById('image-input').setAttribute('capture', 'environment');
+            document.getElementById('image-input').click();
+        });
+
+        document.getElementById('image-input').addEventListener('change', function() {
+            if (this.files.length > 0) {
+                geminiOku(this.files[0]);
+            }
+            this.removeAttribute('capture');
+        });
+    }
+
+
     // 4. Detaylı Arama Düğmesi
     document.getElementById('ara-btn').addEventListener('click', function() {
         const partiNoElement = document.getElementById('parti_no_input');
         const renkElement = document.getElementById('renk_input');
         
         const stokKod = stokKodInput.value.toUpperCase().trim();
-        const partiNo = partiNoElement.value.toUpperCase().trim(); // value zaten select/input değerini verir
+        const partiNo = partiNoElement.value.toUpperCase().trim(); 
         const renk = renkElement.value.toUpperCase().trim();
         
         akilliStokAra('YOK', stokKod, partiNo, renk, DEPO_KODU, 'YOK');
@@ -390,7 +404,6 @@
 
     // 5. Sayım Kaydetme Düğmesi
     document.getElementById('sayim_kaydet_btn').addEventListener('click', function() {
-        // ... (Kayıt mantığı) ...
         const miktar = miktarInput.value;
 
         if (!currentStokKod || currentStokKod === 'YOK') {
@@ -441,30 +454,11 @@
 
     // Sayfa tamamen yüklendiğinde tüm olay dinleyicilerini kur ve ilk aramayı yap
     document.addEventListener('DOMContentLoaded', () => {
-        // Gemini buton dinleyicilerini kur
-        document.getElementById('select-file-btn').addEventListener('click', () => {
-            document.getElementById('image-input').click();
-        });
-
-        document.getElementById('camera-btn').addEventListener('click', () => {
-            document.getElementById('image-input').setAttribute('capture', 'environment');
-            document.getElementById('image-input').click();
-        });
-
-        document.getElementById('image-input').addEventListener('change', function() {
-            if (this.files.length > 0) {
-                geminiOku(this.files[0]);
-            }
-            this.removeAttribute('capture');
-        });
-        
-        // QR Tarayıcı dinleyicisini kur
+        setupGeminiListeners();
         setupQuickScanListener(); 
         
-        // ENTER ve Dropdown dinleyicilerini kur (İlk yüklemede varsayılan input'lar için)
         setupAutoSearchListeners();
         
-        // İlk aramayı tetikle
         akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
     });
 </script>
