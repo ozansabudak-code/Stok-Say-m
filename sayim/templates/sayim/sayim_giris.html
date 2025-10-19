@@ -5,6 +5,7 @@
     <meta charset="UTF-8">
     <title>Stok Sayım Girişi | {{ sayim_emri.ad }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://unpkg.com/html5-qrcode@2.3.9/html5-qrcode.min.js"></script>
     <style>
         /* SADE VE İŞLEVSEL TEMEL STİLLER */
         body { font-family: Arial, sans-serif; padding: 20px; max-width: 600px; margin: auto; background-color: #f4f7f6; }
@@ -35,7 +36,6 @@
     <div class="info-box">
         <h3 class="section-header">A. Hızlı Barkod / QR Okuma</h3>
         <input type="text" id="barkod_input" placeholder="Barkod/Seri No'yu okutun (ENTER)">
-        
         <button id="quick-scan-btn" style="background-color: #007bff; color: white; margin-top: 5px;">
             📸 QR/Barkod Tarayıcıyı Aç
         </button>
@@ -330,7 +330,6 @@
 
 
         // 2. HTML5 BARKOD TARAYICI (Bölüm A) - QR/BARKOD TARAYICIYI AÇ BUTONU
-        // Bu butonu artık Gemini'nin güvenli kamera yoluna bağlıyoruz.
         function setupQuickScanListener() {
             const quickScanBtn = document.getElementById('quick-scan-btn');
             const imageInput = document.getElementById('image-input'); // Gemini'nin input'u
@@ -345,17 +344,15 @@
 
         // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR)
         function setupGeminiListeners() {
-            // Dosyadan Seç
             document.getElementById('select-file-btn').addEventListener('click', () => {
                 document.getElementById('image-input').click();
             });
-            // Kamera ile Çek (Karmaşık etiketler için)
+
             document.getElementById('camera-btn').addEventListener('click', () => {
                 document.getElementById('image-input').setAttribute('capture', 'environment');
                 document.getElementById('image-input').click();
             });
 
-            // Görüntü seçildiğinde/çekildiğinde Gemini'yi tetikle
             document.getElementById('image-input').addEventListener('change', function() {
                 if (this.files.length > 0) {
                     geminiOku(this.files[0]);
