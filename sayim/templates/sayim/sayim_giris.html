@@ -111,7 +111,7 @@
         let currentRenk = 'YOK';
         let currentSeriNo = 'YOK';
 
-        // CSRF Token Fonksiyonu
+        // CSRF Token Fonksiyonu (Django POST için kritik)
         function getCookie(name) {
             let cookieValue = null;
             if (document.cookie && document.cookie !== '') {
@@ -188,7 +188,7 @@
                     document.getElementById('urun_bilgi').innerText = data.urun_bilgi;
                     document.getElementById('last_sayim_goster').innerText = data.last_sayim;
                     
-                    // Kayıt için kullanılacak global değişkenleri güncelle
+                    // Global değişkenleri güncelle
                     currentStokKod = data.stok_kod;
                     currentPartiNo = data.parti_no;
                     currentRenk = data.renk;
@@ -231,8 +231,11 @@
 
         // --- GEMINI/OCR İŞLEMLERİ (Bölüm B) ---
         function geminiOku(file) {
-            ocrStatus.className = 'message';
-            ocrStatus.innerText = '🔍 Resmi analiz ediyoruz (Gemini Vision)...';
+            const statusElement = document.getElementById('ocr_status');
+            if (!statusElement) return; // Güvenlik kontrolü
+
+            statusElement.className = 'message';
+            statusElement.innerText = '🔍 Resmi analiz ediyoruz (Gemini Vision)...';
 
             const formData = new FormData();
             formData.append('image', file);
@@ -247,8 +250,8 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    ocrStatus.className = 'message success';
-                    ocrStatus.innerText = data.message;
+                    statusElement.className = 'message success';
+                    statusElement.innerText = data.message;
                     
                     barkodInput.value = data.seri_no; 
                     stokKodInput.value = data.stok_kod;
@@ -262,13 +265,13 @@
                         data.barkod_ham_veri
                     );
                 } else {
-                    ocrStatus.className = 'message error';
-                    ocrStatus.innerText = `OCR Hatası: ${data.message}`;
+                    statusElement.className = 'message error';
+                    statusElement.innerText = `OCR Hatası: ${data.message}`;
                 }
             })
             .catch(error => {
-                ocrStatus.className = 'message error';
-                ocrStatus.innerText = `Kritik Hata: Gemini Sunucusuna ulaşılamadı. ${error.message}`;
+                statusElement.className = 'message error';
+                statusElement.innerText = `Kritik Hata: Gemini Sunucusuna ulaşılamadı. ${error.message}`;
             });
         }
 
