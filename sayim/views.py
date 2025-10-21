@@ -7,7 +7,7 @@ from datetime import datetime
 from io import BytesIO
 import base64
 
-# Django Imports
+# Django Imports (TEMİZ VE DÜZENLENMİŞ)
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views import View
@@ -15,7 +15,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, CreateView, DetailView, TemplateView
 from django.urls import reverse_lazy
-# F ifadesini kullanabilmek için F eklendi
+from django.core.serializers.json import DjangoJSONEncoder # Konum analizi için kritik import
 from django.db import connection, transaction
 from django.db.models import Max, F 
 from django.utils import timezone
@@ -35,17 +35,11 @@ from google.genai.errors import APIError
 from .models import SayimEmri, Malzeme, SayimDetay, standardize_id_part, generate_unique_id
 from .forms import SayimGirisForm
 
-# --- GEMINI SABİTLERİ ---
+# --- GEMINI SABİTLERİ (SADECE DEĞİŞKENLER TUTULUR, BAŞLATMA FONKSİYON İÇİNE TAŞINDI) ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 
-try:
-    if GEMINI_API_KEY:
-        client = genai.Client(api_key=GEMINI_API_KEY)
-        GEMINI_AVAILABLE = True
-    else:
-        GEMINI_AVAILABLE = False
-except Exception:
-    GEMINI_AVAILABLE = False
+# Modül seviyesinde Client başlatma kaldırıldı!
+GEMINI_AVAILABLE = bool(GEMINI_API_KEY) 
 
 # Resim dosyalarının okunmasını desteklemek için
 ImageFile.LOAD_TRUNCATED_IMAGES = True
@@ -173,6 +167,7 @@ class RaporlamaView(DetailView):
             context['hata'] = f"Raporlama Verisi Çekilirken Kritik Python Hatası: {e}"
             context['rapor_data'] = []
             return context
+
 class PerformansAnaliziView(DetailView):
     model = SayimEmri
     template_name = 'sayim/analiz_performans.html'
@@ -184,7 +179,6 @@ class PerformansAnaliziView(DetailView):
 
         try:
             # KRİTİK REVİZYON: Sadece gerekli verileri çekmek için SQL sorgusu basitleştirildi.
-            # Veritabanı uyumsuzluğuna neden olan JULIANDAY fonksiyonu KALDIRILDI.
             query = f"""
                 SELECT
                     personel_adi,
@@ -304,19 +298,19 @@ class CanliFarkOzetiView(DetailView):
                 grup_ozet[stok_grubu]['tutar_fark_toplam'] += tutar_fark
                 grup_ozet[stok_grubu]['sayilan_mik_toplam'] += sayilan_stok
 
-            rapor_list = []
-            for grup, data in grup_ozet.items():
-                mik_fark_toplam = data['sayilan_mik_toplam'] - data['sistem_mik_toplam']
-                tutar_fark_toplam = data['tutar_fark_toplam']
-                rapor_list.append({
-                    'grup': grup,
-                    'sistem_mik': f"{data['sistem_mik_toplam']:.2f}",
-                    'sistem_tutar': f"{data['sistem_tutar_toplam']:.2f}",
-                    'fazla_mik': f"{mik_fark_toplam if mik_fark_toplam > 0 else 0.0:.2f}",
-                    'eksik_mik': f"{-mik_fark_toplam if mik_fark_toplam < 0 else 0.0:.2f}",
-                    'fazla_tutar': f"{tutar_fark_toplam if tutar_fark_toplam > 0 else 0.0:.2f}",
-                    'eksik_tutar': f"{-tutar_fark_toplam if tutar_fark_toplam < 0 else 0.0:.2f}"
-                })
+                rapor_list = []
+                for grup, data in grup_ozet.items():
+                    mik_fark_toplam = data['sayilan_mik_toplam'] - data['sistem_mik_toplam']
+                    tutar_fark_toplam = data['tutar_fark_toplam']
+                    rapor_list.append({
+                        'grup': grup,
+                        'sistem_mik': f"{data['sistem_mik_toplam']:.2f}",
+                        'sistem_tutar': f"{data['sistem_tutar_toplam']:.2f}",
+                        'fazla_mik': f"{mik_fark_toplam if mik_fark_toplam > 0 else 0.0:.2f}",
+                        'eksik_mik': f"{-mik_fark_toplam if mik_fark_toplam < 0 else 0.0:.2f}",
+                        'fazla_tutar': f"{tutar_fark_toplam if tutar_fark_toplam > 0 else 0.0:.2f}",
+                        'eksik_tutar': f"{-tutar_fark_toplam if tutar_fark_toplam < 0 else 0.0:.2f}"
+                    })
 
             context['analiz_data'] = rapor_list
             return context
@@ -325,6 +319,55 @@ class CanliFarkOzetiView(DetailView):
             context['hata'] = f"Canlı Fark Özeti Çekilirken Kritik Python Hatası: {e}"
             context['analiz_data'] = []
             return context
+
+class KonumAnaliziView(DetailView):
+    model = SayimEmri
+    template_name = 'sayim/analiz_konum.html'
+    context_object_name = 'sayim_emri'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        sayim_emri = kwargs['object']
+        
+        # Sadece geçerli koordinatlara sahip kayıtları çek
+        konum_data = SayimDetay.objects.filter(
+            sayim_emri=sayim_emri,
+            latitude__isnull=False,
+            latitude__icontains='.', 
+            longitude__isnull=False,
+            longitude__icontains='.'
+        ).exclude(latitude='YOK').exclude(longitude='YOK').values(
+            'personel_adi', 'latitude', 'longitude', 'kayit_tarihi', 'sayilan_stok'
+        ).order_by('kayit_tarihi')
+
+        # Harita üzerinde kullanmak için veriyi JSON formatına dönüştür
+        markers = []
+        for item in konum_data:
+            try:
+                markers.append({
+                    'personel': item['personel_adi'],
+                    'lat': float(item['latitude']),
+                    'lng': float(item['longitude']),
+                    'tarih': item['kayit_tarihi'].strftime("%Y-%m-%d %H:%M:%S"),
+                    'stok': item['sayilan_stok']
+                })
+            except ValueError:
+                continue
+
+        # Harita verisini JSON dizesi olarak template'e gönder
+        context['konum_json'] = json.dumps(markers, cls=DjangoJSONEncoder)
+        
+        # Sadece konum verisi olan personel sayısını göster
+        context['toplam_kayit'] = len(markers)
+        context['konum_almayan_kayitlar'] = SayimDetay.objects.filter(sayim_emri=sayim_emri, latitude='YOK').count()
+        context['hata'] = None
+
+        if not markers:
+             context['hata'] = "Bu emre ait haritada gösterilebilir konum verisi (GPS) bulunamadı."
+
+        return context
+
+
 @csrf_exempt
 @transaction.atomic
 def stoklari_onayla_ve_kapat(request, pk):
@@ -403,7 +446,7 @@ def reload_stok_data_from_excel(request):
             return JsonResponse({'success': True, 'message': f'Stok verileri ({file_path}) başarıyla yüklendi/güncellendi.'})
 
         except Exception as e:
-            return JsonResponse({'success': False, 'message': f'Stok yüklenirken hata oluştu: {e}'})
+            return JsonResponse({'success': False, 'message': f'Stok yüklenirken hata oluştu: {e}'}, status=500)
 
     return JsonResponse({'success': False, 'message': 'Geçersiz metot.'}, status=400)
 # --- AJAX / Yardımcı Fonksiyonlar ---
@@ -568,13 +611,14 @@ def ajax_akilli_stok_ara(request):
     return JsonResponse(response_data)
 
 # ####################################################################################
-# ⭐ KRİTİK REVİZYON: ajax_sayim_kaydet (Atomik Miktar Ekleme)
+# ⭐ KRİTİK REVİZYON: ajax_sayim_kaydet (Konum Takibi Eklendi)
 # ####################################################################################
 
 @csrf_exempt
 def ajax_sayim_kaydet(request, sayim_emri_id):
     """
     AJAX ile sayım miktarını kaydeder; yeni stokları otomatik ekler ve mevcut miktarın üzerine atomik olarak ekler.
+    Ayrıca kullanıcının anlık konum bilgisini (lat/lon) kaydeder.
     """
     if request.method == 'POST':
         start_time = time.time()
@@ -588,6 +632,11 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
             miktar_str = data.get('miktar', '')
             depo_kod_raw = data.get('depo_kod', 'MERKEZ')
             personel_adi = data.get('personel_adi', 'MISAFIR')
+            
+            # ⭐ YENİ EKLENEN KRİTİK ALANLAR: Konum verilerini yakala
+            lat = data.get('lat', 'YOK')
+            lon = data.get('lon', 'YOK')
+            loc_hata = data.get('loc_hata', '')
 
             stok_kod = standardize_id_part(stok_kod_raw)
             parti_no = standardize_id_part(parti_no_raw)
@@ -620,35 +669,48 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
                     benzersiz_id=benzersiz_id
                 )
 
+            # NOTE: Konum verileri, ilk oluşturma (created) veya güncelleme sırasında set edilmelidir.
+            defaults = {
+                'sayilan_stok': 0.0, 
+                'personel_adi': personel_adi,
+                # ⭐ KONUM VERİLERİ (Defaults'a eklendi)
+                'latitude': lat, 
+                'longitude': lon, 
+                'loc_hata': loc_hata
+            }
             mevcut_kayit, created = SayimDetay.objects.get_or_create(
                 sayim_emri_id=sayim_emri_id,
                 benzersiz_malzeme=malzeme,
-                defaults={'sayilan_stok': 0.0, 'personel_adi': personel_adi}
+                defaults=defaults
             )
 
             # Atomik Miktar Ekleme: Veritabanı seviyesinde toplama yapar, Race Condition'ı önler
             if created:
-                # Yeni oluşturulduysa, miktarı direk atar
+                # Yeni oluşturulduysa
                 mevcut_kayit.sayilan_stok = miktar
                 mevcut_kayit.saniye_stamp = time.time() - start_time
-                mevcut_kayit.personel_adi = personel_adi
+                # Konum verileri defaults'tan geldiği için sadece save et
                 mevcut_kayit.save()
             else:
                 # Mevcutsa F() ile miktarın üzerine ekler (Atomik işlem)
                 SayimDetay.objects.filter(pk=mevcut_kayit.pk).update(
                     sayilan_stok=F('sayilan_stok') + miktar,
-                    guncellenme_tarihi=timezone.now(), # Güncelleme tarihini manuel olarak ayarla
+                    guncellenme_tarihi=timezone.now(),
                     saniye_stamp=time.time() - start_time,
-                    personel_adi=personel_adi
+                    personel_adi=personel_adi,
+                    # ⭐ KONUM GÜNCELLEME: Her sayım eklemede konumu güncelle
+                    latitude=lat,
+                    longitude=lon,
+                    loc_hata=loc_hata,
                 )
                 # Güncel toplam miktarı alabilmek için kaydı DB'den tazeler
                 mevcut_kayit.refresh_from_db()
 
-            yeni_toplam_miktar = mevcut_kayit.sayilan_stok # Artık atomik olarak güncel değerimiz var
+            yeni_toplam_miktar = mevcut_kayit.sayilan_stok
 
             fark = yeni_toplam_miktar - malzeme.sistem_stogu
 
-            # --- Hız Hesaplama (Ekstra sorgu, ancak performansa büyük etkisi yok) ---
+            # --- Hız Hesaplama ---
             try:
                 son_kayit_tarihi = SayimDetay.objects.filter(
                     sayim_emri_id=sayim_emri_id,
@@ -682,10 +744,6 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
         except Exception as e:
             return JsonResponse({'success': False, 'message': f'Beklenmedik bir hata oluştu: {e}'}, status=500)
 
-# ####################################################################################
-# ⭐ GÜNCELLENMİŞ GEMINI VİSİON ANALİZİ FONKSİYONU 
-# ####################################################################################
-
 @csrf_exempt
 @require_POST
 def gemini_ocr_analiz(request):
@@ -693,8 +751,16 @@ def gemini_ocr_analiz(request):
     Ön yüzden gelen görsel dosyasını alır, Gemini Vision'a gönderir ve
     barkod/stok kodu ve MİKTAR verilerini çıkarır.
     """
+    # ⭐ Hata önleyici client başlatma
     if not GEMINI_AVAILABLE:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
+    
+    try:
+        # Fonksiyon içinde Client'ı başlat
+        client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Gemini Client başlatılamadı: {e}'}, status=500)
+
 
     try:
         # 1. Görseli Al ve Belleğe Yükle
@@ -746,6 +812,7 @@ def gemini_ocr_analiz(request):
         }
         
         # 4. Gemini API Çağrısı
+        from google.genai import types # types'ı burada import ediyoruz
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[PROMPT, img_for_gemini],

@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Konum Analizi | {{ sayim_emri.ad }}</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f4f9; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        #map { height: 500px; width: 100%; border: 1px solid #ccc; margin-top: 20px; }
+        h1 { color: #007bff; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Personel Konum Analizi</h1>
+        <h2 style="color: #6c757d; font-size: 1.2em;">Emir: {{ sayim_emri.ad }} (ID: {{ sayim_emri.pk }})</h2>
+
+        <p style="margin-top: 20px;">
+            <a href="{% url 'raporlama_onay' pk=sayim_emri.pk %}">← Mutabakat Raporuna Geri Dön</a>
+        </p>
+        <p>Toplam Konum Verisi: <strong>{{ toplam_kayit }}</strong> kayıt | Konum Alınamayan Kayıt: {{ konum_almayan_kayitlar }}</p>
+
+        {% if hata %}
+            <p style="color: red; font-weight: bold;">HATA: {{ hata }}</p>
+        {% endif %}
+
+        <div id="map"></div>
+    </div>
+
+    <script>
+        // Python'dan gelen JSON verisini al
+        const konum_data = JSON.parse('{{ konum_json|safe }}');
+        
+        if (konum_data && konum_data.length > 0) {
+            // Haritayı başlat
+            const map = L.map('map').setView([konum_data[0].lat, konum_data[0].lng], 16); // İlk kayda odaklan
+
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            }).addTo(map);
+
+            // Tüm işaretçileri ekle ve harita sınırlarını ayarla
+            const markersGroup = L.featureGroup();
+            
+            konum_data.forEach(item => {
+                const marker = L.marker([item.lat, item.lng]);
+                
+                // Pop-up içeriği
+                const popupContent = `
+                    <b>Personel:</b> ${item.personel}<br>
+                    <b>Zaman:</b> ${item.tarih}<br>
+                    <b>Sayım Miktarı:</b> ${item.stok}<br>
+                    <i>Koordinatlar: ${item.lat.toFixed(4)}, ${item.lng.toFixed(4)}</i>
+                `;
+
+                marker.bindPopup(popupContent);
+                markersGroup.addLayer(marker);
+            });
+
+            markersGroup.addTo(map);
+            
+            // Eğer birden fazla işaretçi varsa, haritayı tüm işaretçileri gösterecek şekilde ayarla
+            if (konum_data.length > 1) {
+                map.fitBounds(markersGroup.getBounds().pad(0.1));
+            }
+        } else if (!'{{ hata }}') {
+             document.getElementById('map').innerHTML = '<p style="text-align: center; padding: 50px;">Haritada gösterilecek geçerli konum verisi bulunamadı.</p>';
+        }
+    </script>
+</body>
+</html>

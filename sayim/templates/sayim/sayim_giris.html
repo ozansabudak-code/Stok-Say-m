@@ -92,7 +92,7 @@
 
 <script>
     // **********************************************
-    // JS FONKSİYONLARI GLOBAL KAPSAMA TAŞINDI (HATA DÜZELTME)
+    // JS FONKSİYONLARI GLOBAL KAPSAMA TAŞINDI
     // **********************************************
 
     // --- TEMEL TANIMLAR (Global Kapsamda Erişilebilir Olmalı) ---
@@ -291,6 +291,37 @@
         });
     }
 
+    // --- 4. KONUM ALMA FONKSİYONU (Global ve Asenkron) ---
+    function getCurrentLocation() {
+        return new Promise((resolve, reject) => {
+            if (!navigator.geolocation) {
+                resolve({ latitude: 'YOK', longitude: 'YOK', precision: 0, error: 'Geolocation not supported' });
+                return;
+            }
+
+            // Konum bilgisini 10 saniye içinde almaya çalış
+            navigator.geolocation.getCurrentPosition(
+                (position) => {
+                    resolve({
+                        latitude: position.coords.latitude,
+                        longitude: position.coords.longitude,
+                        precision: position.coords.accuracy, // Hassasiyet (metre)
+                        error: null
+                    });
+                },
+                (error) => {
+                    // İzin verilmezse (1), zaman aşımına uğrarsa (3) vb.
+                    resolve({ latitude: 'YOK', longitude: 'YOK', precision: 0, error: error.message || 'Location permission denied or timed out' });
+                },
+                {
+                    enableHighAccuracy: true,
+                    timeout: 10000,
+                    maximumAge: 0
+                }
+            );
+        });
+    }
+
 
     // --- OLAY DİNLEYİCİLERİ ---
     
@@ -397,7 +428,7 @@
         });
 
         // 5. Sayım Kaydetme Düğmesi
-        document.getElementById('sayim_kaydet_btn').addEventListener('click', function() {
+        document.getElementById('sayim_kaydet_btn').addEventListener('click', async function() { // ASYNC yapıldı
             const miktar = miktarInput.value;
 
             if (!currentStokKod || currentStokKod === 'YOK') {
@@ -411,13 +442,22 @@
                 return;
             }
 
+            // ⭐ KRİTİK: Konum Bilgisini Asenkron Olarak Al
+            document.getElementById('kayit_mesaji').innerText = 'Konum alınıyor...';
+            const locationData = await getCurrentLocation();
+            document.getElementById('kayit_mesaji').innerText = ''; // Mesajı temizle
+
             const data = {
                 stok_kod: currentStokKod,
                 parti_no: currentPartiNo,
                 renk: currentRenk,
                 miktar: miktar,
                 depo_kod: DEPO_KODU,
-                personel_adi: PERSONEL_ADI 
+                personel_adi: PERSONEL_ADI,
+                // YENİ ALANLAR: Konum verisini ekle
+                lat: locationData.latitude,
+                lon: locationData.longitude,
+                loc_hata: locationData.error // Konum alınamadıysa hata sebebi
             };
 
             fetch(`/ajax/kaydet/${SAYIM_EMRI_ID}/`, {
@@ -431,8 +471,15 @@
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
-                    document.getElementById('kayit_mesaji').className = 'message success';
-                    document.getElementById('kayit_mesaji').innerText = data.message;
+                    // Konum alınamadıysa uyarı ver
+                    if (locationData.error) {
+                        document.getElementById('kayit_mesaji').className = 'message error';
+                        document.getElementById('kayit_mesaji').innerText = `⚠️ Sayım kaydedildi. Ancak konum alınamadı: ${locationData.error}`;
+                    } else {
+                        document.getElementById('kayit_mesaji').className = 'message success';
+                        document.getElementById('kayit_mesaji').innerText = data.message;
+                    }
+                    
                     document.getElementById('yeni_toplam_goster').innerText = data.yeni_miktar;
                     miktarInput.value = ''; 
                 } else {

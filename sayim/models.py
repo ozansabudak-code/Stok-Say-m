@@ -103,6 +103,11 @@ class SayimDetay(models.Model):
     personel_adi = models.CharField(max_length=100)
     saniye_stamp = models.FloatField(default=0.0)
 
+    # ⭐ YENİ EKLENEN KONUM ALANLARI
+    latitude = models.CharField(max_length=50, default='YOK', blank=True, null=True)
+    longitude = models.CharField(max_length=50, default='YOK', blank=True, null=True)
+    loc_hata = models.CharField(max_length=255, default='', blank=True, null=True)
+
     class Meta:
         verbose_name = "Sayım Detay"
         verbose_name_plural = "Sayım Detayları"
