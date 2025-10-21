@@ -21,7 +21,7 @@ SECRET_KEY = 'django-insecure-t-m^d)r7_p^6&y#c2(6%y-!*v2b3@41$a%9*&d3^s#u*^w!@1'
 DEBUG = True 
 
 # Yerel ortamlar için izin verilen hostlar.
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '::1']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '::1', 'stok-1-zts9.onrender.com']
 
 # RENDER ile ilgili tüm ortam değişkeni okuma ve host ekleme satırları SİLİNDİ.
 
