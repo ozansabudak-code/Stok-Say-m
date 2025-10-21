@@ -183,56 +183,71 @@ class PerformansAnaliziView(DetailView):
         sayim_emri_id = kwargs['object'].pk
 
         try:
-            # SQL sorgusu: Personelleri al.
+            # KRİTİK REVİZYON: Sadece gerekli verileri çekmek için SQL sorgusu basitleştirildi.
+            # Veritabanı uyumsuzluğuna neden olan JULIANDAY fonksiyonu KALDIRILDI.
             query = f"""
                 SELECT
                     personel_adi,
-                    COUNT(id) AS toplam_kayit,
-                    -- Bu süreyi hesapla: MAX(tarih) - MIN(tarih)
-                    CAST((JULIANDAY(MAX(guncellenme_tarihi)) - JULIANDAY(MIN(guncellenme_tarihi))) * 86400.0 AS REAL) AS toplam_saniye
+                    guncellenme_tarihi
                 FROM sayim_sayimdetay
                 WHERE sayim_emri_id = {sayim_emri_id}
-                GROUP BY personel_adi
+                ORDER BY personel_adi, guncellenme_tarihi
             """
 
+            # Pandas ile veriyi çek
             df = pd.read_sql_query(query, connection)
+            
+            # Eğer analiz edilebilir veri yoksa hemen dön
+            if df.empty:
+                 context['analiz_data'] = []
+                 context['hata'] = f"Bu emre ait analiz edilebilir sayım verisi bulunamadı."
+                 return context
+
             analiz_list = []
 
-            for _, row in df.iterrows():
-                toplam_saniye = row['toplam_saniye']
-                toplam_kayit = row['toplam_kayit']
+            # Performans hesaplaması artık PYTHON/PANDAS içinde yapılıyor
+            for personel, group in df.groupby('personel_adi'):
+                
+                # Sadece geçerli tarih damgası olanları al ve sırala
+                group = group.dropna(subset=['guncellenme_tarihi']).sort_values('guncellenme_tarihi')
+                
+                toplam_kayit = len(group)
 
-                # --- Ortalama Süre Hesaplama ve Durum Etiketleme ---
-                if toplam_kayit > 1:
-                    # N kayıt için N-1 aralık vardır.
-                    ortalama_sure_sn = toplam_saniye / (toplam_kayit - 1)
-
+                if toplam_kayit < 2:
+                    # Tek kayıt varsa hız hesaplanamaz.
+                    ortalama_sure_sn = float('inf') 
+                    etiket = 'Yetersiz Kayıt (N=1)'
+                    toplam_saniye = 0
+                else:
+                    # Kayıtlar arası farkı saniye cinsinden hesapla
+                    farklar = group['guncellenme_tarihi'].diff().dt.total_seconds().dropna()
+                    
+                    toplam_saniye = farklar.sum()
+                    toplam_aralik = len(farklar) # N kayıt için N-1 aralık vardır
+                    
+                    ortalama_sure_sn = toplam_saniye / toplam_aralik
+                    
+                    # --- Ortalama Süre Formatlama ---
                     if ortalama_sure_sn > 3600:
-                        # Ortalama hız 1 saatin üzerindeyse, bu verinin hatalı/aykırı olduğunu varsayalım.
-                        etiket = 'Aykırı Veri ( > 1 Saat/Kayıt)'
-                        ortalama_sure_sn = float('inf') # Sıralama için sonsuz değer ata
+                         etiket = 'Aykırı Veri ( > 1 Saat/Kayıt)'
+                         ortalama_sure_sn = float('inf')
                     else:
                         dakika = int(ortalama_sure_sn // 60)
                         saniye_kalan = int(ortalama_sure_sn % 60)
                         etiket = f"{dakika:02d}:{saniye_kalan:02d}"
 
-                else:
-                    # Tek kayıt varsa hız hesaplanamaz.
-                    ortalama_sure_sn = float('inf') # Sıralamada sona atmak için sonsuz değer
-                    etiket = 'Yetersiz Kayıt (N=1)'
-
                 analiz_list.append({
-                    'personel': row['personel_adi'],
+                    'personel': personel,
                     'toplam_kayit': toplam_kayit,
                     'toplam_sure_sn': f"{toplam_saniye:.2f}",
                     'ortalama_sure_formatli': etiket,
                     'ortalama_sure_sn': ortalama_sure_sn # Sıralama için ham değeri tut
                 })
 
-            # Analiz listesini Ortalama süreye göre sırala (Sonsuz olanlar sona atılır)
+            # Analiz listesini Ortalama süreye göre sırala
             analiz_list.sort(key=lambda x: x['ortalama_sure_sn'])
 
-            # Gösterim için 'inf' olanları '0.00' veya önceki etiketiyle güncelle
+            # Gösterim için 'inf' olanları düzelt
             for item in analiz_list:
                 if item['ortalama_sure_sn'] == float('inf'):
                     item['ortalama_sure_sn'] = '0.00'
@@ -242,8 +257,9 @@ class PerformansAnaliziView(DetailView):
             context['analiz_data'] = analiz_list
 
         except Exception as e:
+            # Hata mesajını daha kullanıcı dostu yap
             context['analiz_data'] = []
-            context['hata'] = f"Performans analizi hatası: {e}"
+            context['hata'] = f"Performans analizi hatası: Veritabanı sorgusu başarısız oldu. Detay: {e}"
 
         return context
 
