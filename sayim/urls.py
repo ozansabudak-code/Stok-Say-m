@@ -9,8 +9,7 @@ from .views import (
     reload_stok_data_from_excel, ajax_akilli_stok_ara, ajax_sayim_kaydet, 
     gemini_ocr_analiz, export_excel, export_mutabakat_excel,
     
-    # ⭐ YENİ EKLENEN FONSİYONLAR ⭐
-    sifre_resetle_gecici 
+
 )
 
 urlpatterns = [
