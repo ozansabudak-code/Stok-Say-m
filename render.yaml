@@ -4,12 +4,13 @@ services:
     env: python
     buildCommand: 'pip install -r requirements.txt'
     
-    # PreRunCommand: Tesseract ve statik dosyaları toplar. Migration buradan çıkarıldı.
+    # PreRunCommand: Tesseract ve statik dosyaları toplar.
     preRunCommand: 'apt-get update && apt-get install -y libpq-dev tesseract-ocr && python manage.py collectstatic --noinput'
     
-    # KRİTİK: Başlangıç komutu. Sunucu başlamadan önce veritabanı güncellenir.
-    # python manage.py migrate komutu başarılı olursa (&&), gunicorn başlar.
-    startCommand: 'python manage.py migrate && python -m gunicorn stock_project.wsgi'
+    # KRİTİK FAKE MIGRATION KOMUTU:
+    # 1. migrate --fake sayim 0002: Django'ya 0003 ve 0004'ten vazgeçmesini söyler.
+    # 2. migrate: Ardından bu migration'ları gerçekten uygular (sütunları ekler).
+    startCommand: 'python manage.py migrate --fake sayim 0002 && python manage.py migrate && python -m gunicorn stock_project.wsgi'
     
     envVars:
       - key: PORT
