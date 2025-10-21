@@ -21,6 +21,9 @@
         /* Ek Durum Stil Tanımları */
         #urun_bilgi_alani.status-found { border-left: 5px solid green; padding-left: 10px; }
         #urun_bilgi_alani.status-missing { border-left: 5px solid red; padding-left: 10px; }
+        
+        /* Toplu Sayım Tablosu Stil Güncellemesi */
+        #sonuc_tablosu th, #sonuc_tablosu td { border: 1px solid #ddd; padding: 5px; }
     </style>
 </head>
 <body>
@@ -56,10 +59,27 @@
         
         <input type="file" id="image-input" accept="image/*" style="display: none;">
 
-        <p style="font-size: 0.9em; color: gray; margin-top: 10px;">(Gemini Vision ile barkod, stok kodu ve miktar okuma.)</p>
+        <p style="font-size: 0.9em; color: gray; margin-top: 10px;">(Gemini Vision ile **çoklu etiket** okuma.)</p>
         
         <p id="gemini_mesaj" class="message"></p>
     </div>
+    
+    <div id="toplu_sonuc_alani" style="margin-top: 20px; border: 1px solid #007bff; padding: 15px; border-radius: 4px; display: none;">
+        <h3 class="section-header" style="border-bottom: none;">Okunan Toplu Etiketler (<span id="toplu_sonuc_sayisi">0</span> Adet)</h3>
+        <table id="sonuc_tablosu" style="width: 100%; font-size: 0.9em;">
+            <thead>
+                <tr>
+                    <th style="width: 30%; text-align: left;">Barkod / Kod</th>
+                    <th style="width: 20%; text-align: right;">Miktar</th>
+                    <th style="width: 40%; text-align: left;">Parti/Renk</th>
+                    <th style="width: 10%;">İşlem</th>
+                </tr>
+            </thead>
+            <tbody>
+                </tbody>
+        </table>
+    </div>
+
     <hr>
     <h3 class="section-header">Veya Detaylı Giriş</h3>
     
@@ -222,14 +242,18 @@
             });
     }
 
-    // --- 3. GEMINI OKU FONKSİYONU (Global) ---
+    // --- 3. GEMINI OKU FONKSİYONU (Toplu Sonuçları İşler) ---
     function geminiOku(file) {
-        const barkodInput = document.getElementById('barkod_input');
-        const miktarInput = document.getElementById('miktar_input');
         const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
+        const topluSonucAlani = document.getElementById('toplu_sonuc_alani');
+        const sonucTablosuBody = document.getElementById('sonuc_tablosu').getElementsByTagName('tbody')[0];
         
         document.getElementById('gemini_mesaj').className = 'message';
         document.getElementById('gemini_mesaj').innerText = '📸 Görsel yükleniyor ve Gemini ile analiz ediliyor... Bu biraz sürebilir.';
+        
+        // Önceki sonuçları ve alanı temizle
+        topluSonucAlani.style.display = 'none';
+        sonucTablosuBody.innerHTML = '';
         
         const formData = new FormData();
         formData.append('image_file', file);
@@ -245,49 +269,96 @@
         })
         .then(res => {
             if (!res.ok) {
-                return res.json().catch(() => { throw new Error(`Sunucu Hatası: ${res.statusText}`); });
+                return res.json().catch(() => { throw new Error(`Sunucu Hatası (${res.status}). Yanıt JSON değil.`); });
             }
             return res.json();
         })
         .then(data => {
-            if (data.success) {
+            if (data.success && data.results && data.results.length > 0) {
                 document.getElementById('gemini_mesaj').className = 'message success';
-                document.getElementById('gemini_mesaj').innerText = `✅ YZ Başarılı: Barkod: ${data.barkod || '-'} | Stok Kodu: ${data.stok_kod || '-'} | Miktar: ${data.miktar || '-'}`;
+                document.getElementById('gemini_mesaj').innerText = data.message;
 
-                // --- KRİTİK OCR DESTEKLİ AKILLI ARAMA MANTIĞI ---
-                let search_seri = data.barkod || 'YOK';
-                let search_stok_kod = data.stok_kod || 'YOK';
-                let search_parti_no = data.parti_no || 'YOK';
-                let search_renk = data.renk || 'YOK';
+                document.getElementById('toplu_sonuc_sayisi').innerText = data.count;
+                
+                data.results.forEach((item, index) => {
+                    // Her bir sonuç için tabloya bir satır ekle
+                    const row = sonucTablosuBody.insertRow();
+                    
+                    // 1. Hücre: Barkod / Stok Kod
+                    row.insertCell().innerHTML = `
+                        <p style="font-weight: bold; margin: 0;">${item.barkod !== 'YOK' ? item.barkod : item.stok_kod}</p>
+                        <span style="font-size: 0.8em; color: gray;">${item.barkod === 'YOK' ? 'Sadece Kod' : 'Barkod'}</span>
+                    `;
+                    row.cells[0].style.textAlign = 'left';
 
-                // 1. Oku-Kodu ana barkod giriş alanına yaz
-                barkodInput.value = search_seri !== 'YOK' ? search_seri : '';
-                
-                // 2. Miktarı Miktar giriş alanına yaz
-                miktarInput.value = data.miktar || ''; 
-                
-                // 3. Stok kodu, parti ve renk alanlarını Gemini verisiyle doldur
-                const stokKodInput = document.getElementById('stok_kod_input');
-                const partiInput = document.getElementById('parti_no_input');
-                const renkInput = document.getElementById('renk_input');
+                    // 2. Hücre: Miktar
+                    const miktarCell = row.insertCell();
+                    miktarCell.innerText = item.miktar;
+                    miktarCell.style.fontWeight = 'bold';
 
-                stokKodInput.value = search_stok_kod !== 'YOK' ? search_stok_kod : stokKodInput.value;
-                if (partiInput) partiInput.value = search_parti_no !== 'YOK' ? search_parti_no : partiInput.value;
-                if (renkInput) renkInput.value = search_renk !== 'YOK' ? search_renk : renkInput.value;
-                
-                // 4. Akıllı Aramayı Başlat
-                akilliStokAra(search_seri, stokKodInput.value, partiInput.value, renkInput.value, DEPO_KODU, search_seri);
-                
-                miktarInput.focus(); 
+                    // 3. Hücre: Parti/Renk
+                    row.insertCell().innerHTML = `
+                        <p style="margin: 0;">P: ${item.parti_no}</p>
+                        <p style="margin: 0;">R: ${item.renk}</p>
+                    `;
+                    row.cells[2].style.textAlign = 'left';
 
+                    // 4. Hücre: İşlem Butonu
+                    const islemBtn = document.createElement('button');
+                    islemBtn.innerText = 'SEÇ';
+                    islemBtn.style.padding = '5px 8px';
+                    islemBtn.style.width = 'auto';
+                    islemBtn.style.backgroundColor = '#17a2b8'; 
+                    
+                    // Seç butonuna tıklanınca tekli arama alanlarını doldur ve otomatik ara
+                    islemBtn.onclick = function() {
+                        document.getElementById('barkod_input').value = item.barkod !== 'YOK' ? item.barkod : '';
+                        document.getElementById('stok_kod_input').value = item.stok_kod !== 'YOK' ? item.stok_kod : '';
+                        document.getElementById('miktar_input').value = item.miktar;
+                        
+                        // Parti ve Renk alanlarını bulup doldur (Dropdown veya Input olabilir)
+                        const partiInput = document.getElementById('parti_no_input');
+                        if (partiInput) partiInput.value = item.parti_no !== 'YOK' ? item.parti_no : partiInput.value;
+                        const renkInput = document.getElementById('renk_input');
+                        if (renkInput) renkInput.value = item.renk !== 'YOK' ? item.renk : renkInput.value;
+
+                        // Otomatik Aramayı Başlat (Barkod veya Stok Koduna göre)
+                        akilliStokAra(
+                            item.barkod !== 'YOK' ? item.barkod : 'YOK', 
+                            item.stok_kod !== 'YOK' ? item.stok_kod : 'YOK', 
+                            item.parti_no, 
+                            item.renk, 
+                            DEPO_KODU, 
+                            item.barkod // Barkod ham verisi olarak gönder
+                        );
+
+                        document.getElementById('miktar_input').focus();
+                        
+                        // Seçilen satırı vurgula (isteğe bağlı)
+                        Array.from(sonucTablosuBody.rows).forEach(r => r.style.backgroundColor = '');
+                        row.style.backgroundColor = '#e6f7ff';
+                    };
+                    
+                    row.insertCell().appendChild(islemBtn);
+
+                });
+                
+                topluSonucAlani.style.display = 'block';
+
+            } else if (data.success && data.results && data.results.length === 0) {
+                document.getElementById('gemini_mesaj').className = 'message error';
+                document.getElementById('gemini_mesaj').innerText = '❌ YZ Analizi: Görselde geçerli bir etiket verisi okunamadı.';
+                topluSonucAlani.style.display = 'none';
             } else {
                 document.getElementById('gemini_mesaj').className = 'message error';
                 document.getElementById('gemini_mesaj').innerText = `❌ YZ Hatası: ${data.message || 'Analiz başarısız oldu.'}`;
+                topluSonucAlani.style.display = 'none';
             }
         })
         .catch(error => {
             document.getElementById('gemini_mesaj').className = 'message error';
             document.getElementById('gemini_mesaj').innerText = `Kritik Hata: Analiz servisine ulaşılamadı. ${error.message}`;
+            topluSonucAlani.style.display = 'none';
         });
     }
 

@@ -120,6 +120,7 @@ class RaporlamaView(DetailView):
         sayim_emri = kwargs['object']
 
         try:
+            # KRİTİK NOT: Raporlama ekranında latitude hatası almamak için veritabanı migration'ının tamamlanmış olması şarttır.
             sayim_detaylari = SayimDetay.objects.filter(sayim_emri=sayim_emri).select_related('benzersiz_malzeme')
             sayilan_miktarlar = {}
             for detay in sayim_detaylari:
@@ -749,31 +750,28 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
 def gemini_ocr_analiz(request):
     """
     Ön yüzden gelen görsel dosyasını alır, Gemini Vision'a gönderir ve
-    barkod/stok kodu ve MİKTAR verilerini çıkarır.
+    GÖRSELDEKİ TÜM ETİKETLERDEN (ÇOKLU) verileri çıkarır.
     """
     # ⭐ Hata önleyici client başlatma
-    if not GEMINI_AVAILABLE:
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+    if not GEMINI_API_KEY:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
     
     try:
-        # Fonksiyon içinde Client'ı başlat
         client = genai.Client(api_key=GEMINI_API_KEY)
     except Exception as e:
         return JsonResponse({'success': False, 'message': f'Gemini Client başlatılamadı: {e}'}, status=500)
 
 
     try:
-        # 1. Görseli Al ve Belleğe Yükle
         if 'image_file' not in request.FILES:
-            return JsonResponse({'success': False, 'message': 'Görsel dosyası bulunamadı (POST key: image_file bekleniyor).'}, status=400)
+            return JsonResponse({'success': False, 'message': 'Görsel dosyası bulunamadı.'}, status=400)
         
         uploaded_file = request.FILES['image_file']
         
-        # Dosya içeriğini bellekte tut ve ön işleme yap
+        # Dosya ön işleme (Boyutlandırma ve Sıkıştırma)
         image_data = uploaded_file.read()
         img_original = Image.open(BytesIO(image_data))
-
-        # Yeniden Boyutlandırma ve Sıkıştırma (Performans için önemli)
         MAX_SIZE = (1500, 1500)
         JPEG_QUALITY = 85
         img_original.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
@@ -785,34 +783,33 @@ def gemini_ocr_analiz(request):
         img_original.save(buffer_compressed, format="JPEG", quality=JPEG_QUALITY)
         buffer_compressed.seek(0)
         
-        # 5MB dosya limiti kontrolü
-        if buffer_compressed.getbuffer().nbytes > 5 * 1024 * 1024:
-            return JsonResponse({'success': False, 'message': 'Görsel ön işleme sonrası bile 5MB sınırını aşıyor.'}, status=400)
-
         img_for_gemini = Image.open(buffer_compressed)
 
         # 2. Gemini'ye Gönderilecek Talimat (Prompt)
         PROMPT = (
-            "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Seri Numarası/Barkod, Stok Kodu, Parti Numarası, Renk ve Sayım Miktarı (Quantity) değerlerini okumaktır. "
-            "Sayım Miktarı, görselde açıkça belirtilen sayısal değerdir. "
-            "Yanıtını SADECE aşağıdaki JSON formatında ver. "
-            "Eğer bir alan okunamıyorsa veya görselde yoksa, değeri sadece \"YOK\" olarak döndür."
+            "Bu bir stok sayım etiketlerinin fotoğrafıdır. Göreviniz görseldeki TÜM FARKLI ETİKETLERDEN Seri Numarası/Barkod (tekil), Stok Kodu, Parti Numarası, Renk ve Sayım Miktarı (Quantity) değerlerini okumaktır. "
+            "Sayım Miktarı, görselde açıkça belirtilen sayısal değerdir. Tüm sonuçları, okunan her etiket için bir obje olmak üzere, SADECE aşağıdaki JSON DİZİSİ (LIST/ARRAY) formatında ver. "
+            "Eğer bir etiket alan okunamıyorsa veya görselde yoksa, değeri sadece \"YOK\" olarak döndür."
         )
         
-        # 3. Yanıt Şeması
+        # 3. Yanıt Şeması (CRITICAL: JSON array of objects)
         response_schema = {
-            "type": "OBJECT",
-            "properties": {
-                "barkod": {"type": "STRING"},
-                "stok_kod": {"type": "STRING"},
-                "miktar": {"type": "STRING"},
-                "parti_no": {"type": "STRING"}, 
-                "renk": {"type": "STRING"} 
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "barkod": {"type": "STRING"},
+                    "stok_kod": {"type": "STRING"},
+                    "miktar": {"type": "STRING"},
+                    "parti_no": {"type": "STRING"}, 
+                    "renk": {"type": "STRING"} 
+                },
+                "required": ["barkod", "miktar"] 
             }
         }
         
         # 4. Gemini API Çağrısı
-        from google.genai import types # types'ı burada import ediyoruz
+        from google.genai import types 
         response = client.models.generate_content(
             model='gemini-2.5-flash',
             contents=[PROMPT, img_for_gemini],
@@ -825,32 +822,42 @@ def gemini_ocr_analiz(request):
         # 5. Yanıtı Ayrıştır
         try:
             json_string = response.text.strip().strip("```json").strip("```").strip()
-            parsed_data = json.loads(json_string)
+            # Artık parsed_data bir DİZİ (Array) olacak
+            parsed_data_list = json.loads(json_string)
+            
+            if not isinstance(parsed_data_list, list):
+                 raise ValueError("Gemini'den beklenen formatta JSON DİZİSİ dönmedi.")
 
-        except json.JSONDecodeError as e:
-            return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Lütfen etiketi net çekin. Ham Yanıt: {response.text[:100]}...'}, status=500)
+        except (json.JSONDecodeError, ValueError) as e:
+            return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Ham Yanıt: {response.text[:100]}... Detay: {e}'}, status=500)
 
-        # 6. Verileri Çek ve Standartlaştır
-        miktar_str = parsed_data.get('miktar', '0.0')
-        try:
-            miktar = f"{float(miktar_str):.2f}"
-        except ValueError:
-            miktar = '0.00' 
-
-        final_data = {
+        # 6. Verileri Temizle ve Hazırla
+        final_results = []
+        for item in parsed_data_list:
+            miktar_str = item.get('miktar', '0.0')
+            try:
+                miktar = f"{float(miktar_str):.2f}"
+            except ValueError:
+                miktar = '0.00' 
+            
+            final_results.append({
+                'barkod': standardize_id_part(item.get('barkod', '')),
+                'stok_kod': standardize_id_part(item.get('stok_kod', '')),
+                'parti_no': standardize_id_part(item.get('parti_no', '')),
+                'renk': standardize_id_part(item.get('renk', '')),
+                'miktar': miktar,
+            })
+        
+        # Başarılı sonuçları tek bir liste olarak döndür
+        return JsonResponse({
             'success': True,
-            'barkod': standardize_id_part(parsed_data.get('barkod', '')),
-            'stok_kod': standardize_id_part(parsed_data.get('stok_kod', '')),
-            'parti_no': standardize_id_part(parsed_data.get('parti_no', '')),
-            'renk': standardize_id_part(parsed_data.get('renk', '')),
-            'miktar': miktar,
-            'message': f'✅ Gemini ile analiz başarılı. Okunan Miktar: {miktar}'
-        }
-
-        return JsonResponse(final_data)
+            'results': final_results,
+            'count': len(final_results),
+            'message': f'✅ YZ Başarılı: Toplam {len(final_results)} etiket analizi yapıldı.'
+        })
 
     except APIError as e:
-        return JsonResponse({'success': False, 'message': f'Gemini API Hatası: Lütfen API anahtarınızı (GEMINI_API_KEY) kontrol edin. Hata: {e}'}, status=500)
+        return JsonResponse({'success': False, 'message': f'Gemini API Hatası: {e}'}, status=500)
     except Exception as e:
         return JsonResponse({'success': False, 'message': f'Sunucu Hatası: {e}'}, status=500)
 
