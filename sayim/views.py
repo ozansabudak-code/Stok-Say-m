@@ -12,7 +12,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
-from django.views.decorators.http import require_POST # Yeni eklenen import
+from django.views.decorators.http import require_POST
 from django.views.generic import ListView, CreateView, DetailView, TemplateView
 from django.urls import reverse_lazy
 # F ifadesini kullanabilmek için F eklendi
@@ -25,8 +25,6 @@ from django.core.management import call_command
 # Third-party Imports
 from PIL import Image
 import pandas as pd
-# pytesseract iptal
-# import pytesseract 
 from PIL import Image, ImageFile
 
 # Gemini (Google GenAI) Imports
@@ -34,7 +32,6 @@ from google import genai
 from google.genai.errors import APIError
 
 # Local Imports
-# (Malzeme modelinde 'seri_no' alanı olması beklenmektedir)
 from .models import SayimEmri, Malzeme, SayimDetay, standardize_id_part, generate_unique_id
 from .forms import SayimGirisForm
 
@@ -416,7 +413,7 @@ def get_last_sayim_info(benzersiz_id):
 @csrf_exempt
 def ajax_akilli_stok_ara(request):
     """
-    AJAX ile akıllı arama yapar (Seri No/Barkod öncelikli, Parti No yedekli, optimize edilmiş varyant listeleme).
+    AJAX ile akıllı arama yapar (Seri No/Barkod öncelikli, Parti No/Renk varsa Stok Kodu Tahmini yapar, sonra varyant listeler).
     """
     if request.method != 'GET':
         return JsonResponse({'success': False, 'message': 'Geçersiz metot.'}, status=400)
@@ -483,7 +480,29 @@ def ajax_akilli_stok_ara(request):
         except Exception:
             pass
 
-    # --- 2. Öncelik: Parti No / Tam Eşleşme Arama (Seri No başarısız olduysa) ---
+    # --- YENİ EKLENEN KRİTİK BLOK: Parti No'dan Stok Kodu Tahmini ---
+    # Stok kodu yoksa, ancak Parti No ve/veya Renk varsa, Stok Kodunu bulmaya çalış
+    if stok_kod == 'YOK' and parti_no != 'YOK':
+        tahmin_filtresi = {
+            'parti_no': parti_no,
+            'lokasyon_kodu': depo_kod_s
+        }
+        if renk != 'YOK':
+            tahmin_filtresi['renk'] = renk
+
+        tahmin_malzeme = Malzeme.objects.filter(**tahmin_filtresi).values('malzeme_kodu').first()
+
+        if tahmin_malzeme:
+            # Tahmin başarılı: Stok Kodunu güncelledik, şimdi tam eşleşme arayacak.
+            stok_kod = standardize_id_part(tahmin_malzeme['malzeme_kodu'])
+            response_data['stok_kod'] = stok_kod
+            response_data['parti_no'] = parti_no # Parti no'yu da koruyoruz
+            response_data['renk'] = renk # Rengi de koruyoruz
+            response_data['urun_bilgi'] = f"Parti No ({parti_no}) ile Stok Kodu **{stok_kod}** tahmin edildi. Tam eşleşme aranıyor..."
+            # Not: Kod akışı, Stok Kodu artık dolu olduğu için doğrudan Öncelik 2'ye geçer.
+
+
+    # --- 2. Öncelik: Parti No / Tam Eşleşme Arama (Stok Kodu tahmin edilmiş olabilir) ---
     if stok_kod != 'YOK' and parti_no != 'YOK' and renk != 'YOK':
         benzersiz_id = generate_unique_id(stok_kod, parti_no, depo_kod_s, renk)
         malzeme = Malzeme.objects.filter(benzersiz_id=benzersiz_id).first()
@@ -502,6 +521,7 @@ def ajax_akilli_stok_ara(request):
 
 
     # --- 3. Öncelik: Stok Kodu Bazlı Varyant Listeleme (Hız Optimizasyonu) ---
+    # Stok kodu tahmin edildiyse, bu blok varyantları listeleyecektir.
     if stok_kod != 'YOK' and len(stok_kod) >= 3:
         try:
             varyant_data = Malzeme.objects.filter(
@@ -526,7 +546,7 @@ def ajax_akilli_stok_ara(request):
 
         response_data['parti_varyantlar'] = parti_varyantlar
         response_data['renk_varyantlar'] = renk_varyantlar
-        response_data['urun_bilgi'] = "Seri/Parti eşleşmedi. Stok koduna ait varyantlar listelendi. Yeni stok olabilir."
+        response_data['urun_bilgi'] = f"Stok Kodu **{stok_kod}**'a ait varyantlar listelendi. Tam eşleşme sağlanamadı."
 
 
     return JsonResponse(response_data)
@@ -647,15 +667,15 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
             return JsonResponse({'success': False, 'message': f'Beklenmedik bir hata oluştu: {e}'}, status=500)
 
 # ####################################################################################
-# ⭐ GÜNCELLENMİŞ GEMINI VİSİON ANALİZİ FONKSİYONU (gemini_parti_oku yerine geldi)
+# ⭐ GÜNCELLENMİŞ GEMINI VİSİON ANALİZİ FONKSİYONU 
 # ####################################################################################
 
 @csrf_exempt
-@require_POST # Sadece POST isteği ile çalışır
+@require_POST
 def gemini_ocr_analiz(request):
     """
     Ön yüzden gelen görsel dosyasını alır, Gemini Vision'a gönderir ve
-    barkod/stok kodu ve MİKTAR verilerini çıkarır. (HTML'den /ajax/gemini-ocr-analiz/ olarak çağrılır.)
+    barkod/stok kodu ve MİKTAR verilerini çıkarır.
     """
     if not GEMINI_AVAILABLE:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
@@ -683,7 +703,7 @@ def gemini_ocr_analiz(request):
         img_original.save(buffer_compressed, format="JPEG", quality=JPEG_QUALITY)
         buffer_compressed.seek(0)
         
-        # 5MB dosya limiti kontrolü (Gemini API limitlerine uyum için)
+        # 5MB dosya limiti kontrolü
         if buffer_compressed.getbuffer().nbytes > 5 * 1024 * 1024:
             return JsonResponse({'success': False, 'message': 'Görsel ön işleme sonrası bile 5MB sınırını aşıyor.'}, status=400)
 
@@ -691,14 +711,13 @@ def gemini_ocr_analiz(request):
 
         # 2. Gemini'ye Gönderilecek Talimat (Prompt)
         PROMPT = (
-            "Bu bir stok sayım etiketinin veya el yazısı sayım notunun fotoğrafıdır. "
-            "Göreviniz Seri Numarası/Barkod, Stok Kodu VE Sayım Miktarı (Quantity) değerlerini okumaktır. "
-            "Sayım Miktarı, görselde açıkça belirtilen sayısal değerdir (örneğin '25.0', '1.0'). "
+            "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Seri Numarası/Barkod, Stok Kodu, Parti Numarası, Renk ve Sayım Miktarı (Quantity) değerlerini okumaktır. "
+            "Sayım Miktarı, görselde açıkça belirtilen sayısal değerdir. "
             "Yanıtını SADECE aşağıdaki JSON formatında ver. "
-            "Eğer bir alan okunamıyorsa veya görselde yoksa, değeri boş (\"YOK\") bırak. "
+            "Eğer bir alan okunamıyorsa veya görselde yoksa, değeri sadece \"YOK\" olarak döndür."
         )
         
-        # 3. Yanıt Şemasını (Response Schema) Miktar için güncelledik
+        # 3. Yanıt Şeması
         response_schema = {
             "type": "OBJECT",
             "properties": {
@@ -712,7 +731,7 @@ def gemini_ocr_analiz(request):
         
         # 4. Gemini API Çağrısı
         response = client.models.generate_content(
-            model='gemini-2.5-flash', # Hızlı ve uygun maliyetli multimodal model
+            model='gemini-2.5-flash',
             contents=[PROMPT, img_for_gemini],
             config={
                 "response_mime_type": "application/json",
@@ -722,21 +741,18 @@ def gemini_ocr_analiz(request):
 
         # 5. Yanıtı Ayrıştır
         try:
-            # Model yanıtını temizleyip JSON'a dönüştür
             json_string = response.text.strip().strip("```json").strip("```").strip()
             parsed_data = json.loads(json_string)
 
         except json.JSONDecodeError as e:
             return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Lütfen etiketi net çekin. Ham Yanıt: {response.text[:100]}...'}, status=500)
 
-        # 6. Verileri Çek, Standartlaştır ve Ön Yüze Gönder
-        
-        # Miktar verisini float olarak işlemek için kontrol
+        # 6. Verileri Çek ve Standartlaştır
         miktar_str = parsed_data.get('miktar', '0.0')
         try:
             miktar = f"{float(miktar_str):.2f}"
         except ValueError:
-            miktar = '0.00' # Geçersiz miktar bulduysa sıfır kabul et
+            miktar = '0.00' 
 
         final_data = {
             'success': True,
@@ -748,7 +764,6 @@ def gemini_ocr_analiz(request):
             'message': f'✅ Gemini ile analiz başarılı. Okunan Miktar: {miktar}'
         }
 
-        # Ön yüze gönder
         return JsonResponse(final_data)
 
     except APIError as e:
@@ -824,7 +839,7 @@ def export_mutabakat_excel(request, pk):
         tum_malzemeler = Malzeme.objects.all()
 
         rapor_list = []
-        # Benzersiz ID'ye göre son sayım miktarlarını topla (Bu kısım zaten doğru çalışıyor olmalı)
+        # Benzersiz ID'ye göre son sayım miktarlarını topla
         sayilan_miktarlar = {}
         for detay in sayim_detaylari:
             malzeme_id = detay.benzersiz_malzeme.benzersiz_id
