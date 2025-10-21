@@ -4,11 +4,12 @@ services:
     env: python
     buildCommand: 'pip install -r requirements.txt'
     
-    # Yeni: Dağıtım aşamasında Django komutlarını çalıştır
-    preRunCommand: 'apt-get update && apt-get install -y libpq-dev tesseract-ocr && python manage.py collectstatic --noinput && python manage.py migrate' 
+    # PreRunCommand: Tesseract ve statik dosyaları toplar. Migration buradan çıkarıldı.
+    preRunCommand: 'apt-get update && apt-get install -y libpq-dev tesseract-ocr && python manage.py collectstatic --noinput'
     
-    # KRİTİK: gunicorn'u PATH sorunlarını es geçerek Python modülü olarak çağır
-    startCommand: 'python -m gunicorn stock_project.wsgi'
+    # KRİTİK: Başlangıç komutu. Sunucu başlamadan önce veritabanı güncellenir.
+    # python manage.py migrate komutu başarılı olursa (&&), gunicorn başlar.
+    startCommand: 'python manage.py migrate && python -m gunicorn stock_project.wsgi'
     
     envVars:
       - key: PORT
