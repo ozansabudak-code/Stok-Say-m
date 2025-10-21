@@ -76,10 +76,19 @@ class SayimEmri(models.Model):
         ('Tamamlandı', 'Tamamlandı'),
     ]
 
-    ad = models.CharField(max_length=255, verbose_name="Sayım Emri Adı") # <-- BU SATIRI EKLEYİN/DEĞİŞTİRİN
+    ad = models.CharField(max_length=255, verbose_name="Sayım Emri Adı")
     tarih = models.DateTimeField(default=timezone.now)
     durum = models.CharField(max_length=20, choices=DURUM_SECENEKLERI, default='Açık')
     onay_tarihi = models.DateTimeField(null=True, blank=True)
+
+    # ⭐ REVİZYON: Çoklu Personel Atama Alanı
+    atanan_personel = models.CharField(
+        max_length=255, 
+        default='ATANMADI', 
+        blank=True, 
+        null=True,
+        verbose_name="Atanan Personeller (Virgül ile ayırın)"
+    ) 
 
     class Meta:
         verbose_name = "Sayım Emri"

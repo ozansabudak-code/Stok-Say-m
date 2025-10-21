@@ -11,6 +11,8 @@ import base64
 from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views import View
+# messages kütüphanesini hata mesajı göstermek için import edin
+from django.contrib import messages 
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 from django.views.generic import ListView, CreateView, DetailView, TemplateView
@@ -54,7 +56,8 @@ class SayimEmirleriListView(ListView):
 
 class SayimEmriCreateView(CreateView):
     model = SayimEmri
-    fields = ['ad']
+    # ⭐ REVİZYON: Atanan personel alanını forma ekliyoruz
+    fields = ['ad', 'atanan_personel'] 
     template_name = 'sayim/sayim_emri_olustur.html'
     success_url = reverse_lazy('sayim_emirleri')
 
@@ -69,20 +72,48 @@ class PersonelLoginView(TemplateView):
         context = super().get_context_data(**kwargs)
         context['sayim_emri_id'] = kwargs['sayim_emri_id']
         context['depo_kodu'] = kwargs['depo_kodu']
+        # ⭐ Sayım Emri bilgisini çekip atanan kişiyi gösterebiliriz
+        context['sayim_emri'] = get_object_or_404(SayimEmri, pk=kwargs['sayim_emri_id'])
         return context
 
 @csrf_exempt
 def set_personel_session(request):
+    """
+    ⭐ REVİZYON: Personel girişinde görev atama kısıtlaması kontrolü yapar.
+    """
     if request.method == 'POST':
-        personel_adi = request.POST.get('personel_adi', '').strip().upper()
+        personel_adi_raw = request.POST.get('personel_adi', '').strip()
         sayim_emri_id = request.POST.get('sayim_emri_id')
         depo_kodu = request.POST.get('depo_kodu')
 
-        if personel_adi:
-            request.session['current_user'] = personel_adi
-            return redirect('sayim_giris', pk=sayim_emri_id, depo_kodu=depo_kodu)
+        # Personel adı boşsa engelle
+        if not personel_adi_raw:
+             messages.error(request, "Lütfen adınızı girin.")
+             return redirect('personel_login', sayim_emri_id=sayim_emri_id, depo_kodu=depo_kodu)
 
-        return redirect('depo_secim', sayim_emri_id=sayim_emri_id)
+        # Giriş yapan personelin adını standardize et
+        personel_adi = personel_adi_raw.upper()
+        sayim_emri = get_object_or_404(SayimEmri, pk=sayim_emri_id)
+        
+        # ⭐ ÇOKLU GÖREV ATAMA KONTROLÜ ⭐
+        atanan_listesi_raw = sayim_emri.atanan_personel.upper()
+
+        if atanan_listesi_raw != 'ATANMADI' and atanan_listesi_raw:
+            # Virgülle ayrılmış listeyi temizle ve büyük harfe çevir
+            atananlar = [isim.strip() for isim in atanan_listesi_raw.split(',')]
+            
+            if personel_adi not in atananlar:
+                # Giren kişi atanmış kişiler listesinde YOKSA engelle
+                messages.error(request, f"Bu sayım emri sadece {atanan_listesi_raw} kişilerine atanmıştır. Giriş yetkiniz yok.")
+                return redirect('personel_login', sayim_emri_id=sayim_emri_id, depo_kodu=depo_kodu)
+
+        # Kontrolü geçtiyse, oturumu başlat ve devam et
+        request.session['current_user'] = personel_adi
+        return redirect('sayim_giris', pk=sayim_emri_id, depo_kodu=depo_kodu)
+
+    # POST olmayan istekleri depo seçimine yönlendir
+    return redirect('depo_secim', sayim_emri_id=request.GET.get('sayim_emri_id'))
+
 
 class DepoSecimView(TemplateView):
     template_name = 'sayim/depo_secim.html'
