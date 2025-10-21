@@ -12,6 +12,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.http import HttpResponse, JsonResponse
 from django.views import View
 from django.views.decorators.csrf import csrf_exempt
+from django.views.decorators.http import require_POST # Yeni eklenen import
 from django.views.generic import ListView, CreateView, DetailView, TemplateView
 from django.urls import reverse_lazy
 # F ifadesini kullanabilmek için F eklendi
@@ -91,8 +92,6 @@ def set_personel_session(request):
             return redirect('sayim_giris', pk=sayim_emri_id, depo_kodu=depo_kodu)
 
         return redirect('depo_secim', sayim_emri_id=sayim_emri_id)
-
-    return redirect('sayim_emirleri')
 
 class DepoSecimView(TemplateView):
     template_name = 'sayim/depo_secim.html'
@@ -410,14 +409,6 @@ def get_last_sayim_info(benzersiz_id):
         }
     return None
 
-# --- HIZLI OCR YARDIMCI FONKSİYONU ---
-# Tesseract gerektirdiği için bu fonksiyonu artık KULLANMAMALIYIZ!
-# Bu fonksiyonun yorum satırına alınması veya kaldırılması gerekir.
-# def quick_ocr_extract(img_tesseract):
-#     ...
-#     return None
-
-
 # ####################################################################################
 # ⭐ OPTİMİZE EDİLMİŞ AKILLI ARAMA FONKSİYONU (views.py)
 # ####################################################################################
@@ -633,6 +624,8 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
                     kayit_arasi_saniye = (timezone.now() - son_tarih).total_seconds()
                     if kayit_arasi_saniye > 3600 or kayit_arasi_saniye < 0:
                         kayit_arasi_saniye = 0.0
+                    else:
+                        kayit_arasi_saniye = 0.0
                 else:
                     kayit_arasi_saniye = 0.0
             except Exception:
@@ -654,117 +647,114 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
             return JsonResponse({'success': False, 'message': f'Beklenmedik bir hata oluştu: {e}'}, status=500)
 
 # ####################################################################################
-# ⭐ HIZ OPTİMİZASYONU: gemini_parti_oku (Tesseract Kaldırıldı)
+# ⭐ GÜNCELLENMİŞ GEMINI VİSİON ANALİZİ FONKSİYONU (gemini_parti_oku yerine geldi)
 # ####################################################################################
 
 @csrf_exempt
-def gemini_parti_oku(request):
+@require_POST # Sadece POST isteği ile çalışır
+def gemini_ocr_analiz(request):
     """
-    Gemini Vision kullanarak etiket fotoğrafından veri okur (Tesseract iptal).
+    Ön yüzden gelen görsel dosyasını alır, Gemini Vision'a gönderir ve
+    barkod/stok kodu ve MİKTAR verilerini çıkarır. (HTML'den /ajax/gemini-ocr-analiz/ olarak çağrılır.)
     """
     if not GEMINI_AVAILABLE:
         return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
 
-    if request.method == 'POST' and request.FILES.get('image'):
-
-        uploaded_file = request.FILES['image']
+    try:
+        # 1. Görseli Al ve Belleğe Yükle
+        if 'image_file' not in request.FILES:
+            return JsonResponse({'success': False, 'message': 'Görsel dosyası bulunamadı (POST key: image_file bekleniyor).'}, status=400)
         
-        # Hızlı tarama bayrağını yakala (JavaScript'ten geliyorsa)
-        is_quick_scan = request.POST.get('is_quick_scan') == 'true'
+        uploaded_file = request.FILES['image_file']
+        
+        # Dosya içeriğini bellekte tut ve ön işleme yap
+        image_data = uploaded_file.read()
+        img_original = Image.open(BytesIO(image_data))
 
-        # YÜKSEK ÇÖZÜNÜRLÜKLÜ GÖRSELİ OKUMA VE ÖN İŞLEME
-        try:
-            image_data = uploaded_file.read()
-            img_original = Image.open(BytesIO(image_data))
+        # Yeniden Boyutlandırma ve Sıkıştırma (Performans için önemli)
+        MAX_SIZE = (1500, 1500)
+        JPEG_QUALITY = 85
+        img_original.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
+        
+        buffer_compressed = BytesIO()
+        if img_original.mode in ('RGBA', 'P'):
+            img_original = img_original.convert('RGB')
+        
+        img_original.save(buffer_compressed, format="JPEG", quality=JPEG_QUALITY)
+        buffer_compressed.seek(0)
+        
+        # 5MB dosya limiti kontrolü (Gemini API limitlerine uyum için)
+        if buffer_compressed.getbuffer().nbytes > 5 * 1024 * 1024:
+            return JsonResponse({'success': False, 'message': 'Görsel ön işleme sonrası bile 5MB sınırını aşıyor.'}, status=400)
 
-            # Yeniden Boyutlandırma ve Sıkıştırma Ayarları
-            MAX_SIZE = (1500, 1500)
-            JPEG_QUALITY = 85
+        img_for_gemini = Image.open(buffer_compressed)
 
-            img_original.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
-
-            buffer_compressed = BytesIO()
-            if img_original.mode in ('RGBA', 'P'):
-                img_original = img_original.convert('RGB')
-
-            img_original.save(buffer_compressed, format="JPEG", quality=JPEG_QUALITY)
-            buffer_compressed.seek(0)
-
-            if buffer_compressed.getbuffer().nbytes > 5 * 1024 * 1024:
-                return JsonResponse({'success': False, 'message': 'Görsel ön işleme sonrası bile 5MB sınırını aşıyor.'}, status=400)
-
-            img_for_gemini = Image.open(buffer_compressed)
-            # img_tesseract kaldırıldı
-
-
-            # --- GEMINI VİSİON İLE DEVAM ET (Tek Yol) ---
-            prompt = (
-                "Bu bir stok sayım etiketinin fotoğrafıdır. Göreviniz Seri Numarası, Stok Kodu, Parti Numarası, Varyant (renk) VE etiket üzerindeki QR kod/barkodun kodladığı ham metni okumaktır. "
-                "Önemli Kurallar: 1. Tüm değerleri etiket üzerinde gördüğünüz ham metin olarak döndürün. 2. Eğer bir alan etikette kesinlikle yoksa veya okunamıyorsa, değeri sadece 'YOK' olarak döndürün. 3. Tüm yanıtı SADECE aşağıdaki JSON şemasına uygun döndürün."
-            )
-            response_schema = {
-                "type": "OBJECT",
-                "properties": {
-                    "Seri No": {"type": "STRING"},
-                    "Stok Kodu": {"type": "STRING"},
-                    "Parti No": {"type": "STRING"},
-                    "Varyant": {"type": "STRING"},
-                    "Barkod Ham Veri": {"type": "STRING"}
-                }
+        # 2. Gemini'ye Gönderilecek Talimat (Prompt)
+        PROMPT = (
+            "Bu bir stok sayım etiketinin veya el yazısı sayım notunun fotoğrafıdır. "
+            "Göreviniz Seri Numarası/Barkod, Stok Kodu VE Sayım Miktarı (Quantity) değerlerini okumaktır. "
+            "Sayım Miktarı, görselde açıkça belirtilen sayısal değerdir (örneğin '25.0', '1.0'). "
+            "Yanıtını SADECE aşağıdaki JSON formatında ver. "
+            "Eğer bir alan okunamıyorsa veya görselde yoksa, değeri boş (\"YOK\") bırak. "
+        )
+        
+        # 3. Yanıt Şemasını (Response Schema) Miktar için güncelledik
+        response_schema = {
+            "type": "OBJECT",
+            "properties": {
+                "barkod": {"type": "STRING"},
+                "stok_kod": {"type": "STRING"},
+                "miktar": {"type": "STRING"},
+                "parti_no": {"type": "STRING"}, 
+                "renk": {"type": "STRING"} 
             }
-            
-            # --- Gemini API Çağrısı ---
-            response = client.models.generate_content(
-                model='gemini-2.5-flash',
-                contents=[prompt, img_for_gemini],
-                config={
-                    "response_mime_type": "application/json",
-                    "response_schema": response_schema
-                }
-            )
+        }
+        
+        # 4. Gemini API Çağrısı
+        response = client.models.generate_content(
+            model='gemini-2.5-flash', # Hızlı ve uygun maliyetli multimodal model
+            contents=[PROMPT, img_for_gemini],
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": response_schema
+            }
+        )
 
-            try:
-                json_string = response.text.strip().strip("```json").strip("```").strip()
-                parsed_data = json.loads(json_string)
+        # 5. Yanıtı Ayrıştır
+        try:
+            # Model yanıtını temizleyip JSON'a dönüştür
+            json_string = response.text.strip().strip("```json").strip("```").strip()
+            parsed_data = json.loads(json_string)
 
-            except json.JSONDecodeError as e:
-                return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Lütfen etiketi net çekin. Hata: {e}', 'raw_text': response.text}, status=500)
+        except json.JSONDecodeError as e:
+            return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Lütfen etiketi net çekin. Ham Yanıt: {response.text[:100]}...'}, status=500)
 
-            # Verileri çek ve standartlaştır
-            seri_no = standardize_id_part(parsed_data.get('Seri No', ''))
-            stok_kod = standardize_id_part(parsed_data.get('Stok Kodu', ''))
-            parti_no = standardize_id_part(parsed_data.get('Parti No', ''))
-            varyant = standardize_id_part(parsed_data.get('Varyant', ''))
-            barkod_ham_veri = standardize_id_part(parsed_data.get('Barkod Ham Veri', ''))
+        # 6. Verileri Çek, Standartlaştır ve Ön Yüze Gönder
+        
+        # Miktar verisini float olarak işlemek için kontrol
+        miktar_str = parsed_data.get('miktar', '0.0')
+        try:
+            miktar = f"{float(miktar_str):.2f}"
+        except ValueError:
+            miktar = '0.00' # Geçersiz miktar bulduysa sıfır kabul et
 
-            # Seri no/Stok kod önceliği mantığı
-            if seri_no == 'YOK' and barkod_ham_veri != 'YOK' and len(barkod_ham_veri) > 2:
-                seri_no = barkod_ham_veri
-            elif stok_kod == 'YOK' and barkod_ham_veri != 'YOK' and len(barkod_ham_veri) > 2:
-                stok_kod = barkod_ham_veri
-                
-            
-            # HIZLI TARAMA İÇİN ÖZEL MESAJ
-            if is_quick_scan:
-                message = f'✅ HIZLI TARAMA BAŞARILI. Seri No bulundu: {seri_no}.'
-            else:
-                message = f'✅ GEMINI ANALİZİ BAŞARILI. Seri No: {seri_no}, Stok Kodu: {stok_kod}'
+        final_data = {
+            'success': True,
+            'barkod': standardize_id_part(parsed_data.get('barkod', '')),
+            'stok_kod': standardize_id_part(parsed_data.get('stok_kod', '')),
+            'parti_no': standardize_id_part(parsed_data.get('parti_no', '')),
+            'renk': standardize_id_part(parsed_data.get('renk', '')),
+            'miktar': miktar,
+            'message': f'✅ Gemini ile analiz başarılı. Okunan Miktar: {miktar}'
+        }
 
+        # Ön yüze gönder
+        return JsonResponse(final_data)
 
-            return JsonResponse({
-                'success': True,
-                'seri_no': seri_no,
-                'stok_kod': stok_kod,
-                'parti_no': parti_no,
-                'renk': varyant,
-                'barkod_ham_veri': barkod_ham_veri,
-                'message': message
-            })
-
-        except APIError as e:
-            return JsonResponse({'success': False, 'message': f'Gemini API Hatası: {e}'}, status=500)
-        except Exception as e:
-            return JsonResponse({'success': False, 'message': f'Sunucu Hatası: {e}'}, status=500)
+    except APIError as e:
+        return JsonResponse({'success': False, 'message': f'Gemini API Hatası: Lütfen API anahtarınızı (GEMINI_API_KEY) kontrol edin. Hata: {e}'}, status=500)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Sunucu Hatası: {e}'}, status=500)
 
 @csrf_exempt
 def export_excel(request, pk):

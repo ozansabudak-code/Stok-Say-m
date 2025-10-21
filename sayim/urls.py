@@ -16,14 +16,12 @@ urlpatterns = [
 
     # 3. RAPORLAMA VE ONAY
     path('rapor/<int:pk>/', views.RaporlamaView.as_view(), name='raporlama_onay'),
-    # 'export_excel_rapor' ve 'export_excel' yolları çakışmasın diye birini sildim
     path('rapor/<int:pk>/export/', views.export_excel, name='export_excel_rapor'),
     path('onayla/<int:pk>/', views.stoklari_onayla_ve_kapat, name='stoklari_onayla'),
 
     # 4. ANALİZ EKRANLARI
     path('analiz/personel/<int:pk>/', views.PerformansAnaliziView.as_view(), name='analiz_performans'),
     path('analiz/fark/<int:pk>/', views.CanliFarkOzetiView.as_view(), name='analiz_fark_ozeti'),
-    # Excel dışa aktarma yollarını netleştirdim
     path('export_mutabakat/<int:pk>/', views.export_mutabakat_excel, name='export_mutabakat_excel'),
 
     # 5. YÖNETİM VE AJAX
@@ -32,8 +30,9 @@ urlpatterns = [
     path('yonetim/reload/', views.reload_stok_data_from_excel, name='reload_stok_data'),
 
     # AJAX ENDPOINT'LERİ
-    # Tekrar eden 'ajax_stok-ara-akilli/' tanımını kaldırdım.
     path('ajax/stok-ara-akilli/', views.ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
     path('ajax/kaydet/<int:sayim_emri_id>/', views.ajax_sayim_kaydet, name='ajax_sayim_kaydet'),
-    path('ajax/gemini-oku/', views.gemini_parti_oku, name='gemini_parti_oku'),
+    
+    # ⭐ GÜNCELLENDİ: views.gemini_ocr_analiz fonksiyonunu işaret ediyor.
+    path('ajax/gemini-ocr-analiz/', views.gemini_ocr_analiz, name='gemini_ocr_analiz'),
 ]
