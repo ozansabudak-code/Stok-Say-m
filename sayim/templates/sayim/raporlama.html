@@ -1,3 +1,4 @@
+{% load static %}
 <!DOCTYPE html>
 <html lang="tr">
 <head>
@@ -12,6 +13,8 @@
         .analiz-btn { background-color: #007bff; color: white; padding: 10px 15px; text-decoration: none; border-radius: 4px; margin-right: 10px; display: inline-block; font-size: 0.95em; }
         .fark-btn { background-color: darkgreen; }
         .excel-btn { background-color: orange; color: white; padding: 10px 15px; border-radius: 4px; text-decoration: none; margin-left: 10px; }
+        /* Yeni buton stilini tanımlayalım */
+        .konum-btn { background-color: #20c997; } 
 
         table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 0.85em; }
         th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: right; }
@@ -31,6 +34,11 @@
         <div class="analiz-container">
             <a href="{% url 'analiz_performans' pk=sayim_emri.pk %}" class="analiz-btn">PERFORMANS ANALİZİ</a>
             <a href="{% url 'analiz_fark_ozeti' pk=sayim_emri.pk %}" class="analiz-btn fark-btn">CANLI FARK ÖZETİ (STOK GRUBU)</a>
+            
+            <a href="{% url 'analiz_konum' pk=sayim_emri.pk %}" class="analiz-btn konum-btn">
+                🧭 KONUM ANALİZİ
+            </a>
+            
             <a href="{% url 'export_mutabakat_excel' pk=sayim_emri.pk %}" class="analiz-btn excel-btn">EXCEL OLARAK İNDİR</a>
         </div>
 
