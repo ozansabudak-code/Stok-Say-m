@@ -76,7 +76,7 @@ class SayimEmri(models.Model):
         ('Tamamlandı', 'Tamamlandı'),
     ]
 
-    ad = models.CharField(max_length=255)
+    ad = models.CharField(max_length=255, verbose_name="Sayım Emri Adı") # <-- BU SATIRI EKLEYİN/DEĞİŞTİRİN
     tarih = models.DateTimeField(default=timezone.now)
     durum = models.CharField(max_length=20, choices=DURUM_SECENEKLERI, default='Açık')
     onay_tarihi = models.DateTimeField(null=True, blank=True)

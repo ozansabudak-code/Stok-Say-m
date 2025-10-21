@@ -4,33 +4,31 @@ Django settings for stock_project project.
 
 from pathlib import Path
 import os
-import dj_database_url
-# Whitenoise, production ortamında statik dosyaları sunmak için önerilir.
+# dj_database_url import'ını yorum satırına alıyoruz, çünkü artık kullanmayacağız.
+# import dj_database_url 
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
-# --- 1. GÜVENLİK VE ANAHTAR YÖNETİMİ (ZORUNLU) ---
-SECRET_KEY = os.environ.get('SECRET_KEY')
-if not SECRET_KEY:
-    # Bu kontrol, anahtarın ayarlanmadığı durumlarda uygulamanın başlamasını engeller.
-    pass 
+# ----------------------------------------------------------------------
+# 1. GÜVENLİK VE ANAHTAR YÖNETİMİ
+# ----------------------------------------------------------------------
 
-# DEBUG'ı ortam değişkeninden oku. DEBUG_VALUE='True' ise DEBUG=True olur.
-DEBUG = os.environ.get('DEBUG_VALUE') == 'True'
+# SECRET_KEY'i sabit bir değer olarak ayarlıyoruz. Üretimde bu değiştirilmelidir.
+SECRET_KEY = 'django-insecure-t-m^d)r7_p^6&y#c2(6%y-!*v2b3@41$a%9*&d3^s#u*^w!@1' 
 
-# İzin verilen sunucular, Render domainleri ve özel domain'ler için
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '127.0.0.1,localhost').split(',') 
-ALLOWED_HOSTS.append('.render.com') 
+# Yerel geliştirme ortamında her zaman True yapıyoruz.
+DEBUG = True 
 
-# === 🚨 400 Bad Request Hatası Çözümü: Render Host Adını Ekleme ===
-# Render'dan gelen tam host adını alıp ALLOWED_HOSTS listesine ekler.
-# Bu, https://stok-35vx.onrender.com gibi adreslerin tanınmasını sağlar.
-RENDER_EXTERNAL_HOSTNAME = os.environ.get('RENDER_EXTERNAL_HOSTNAME')
-if RENDER_EXTERNAL_HOSTNAME:
-    ALLOWED_HOSTS.append(RENDER_EXTERNAL_HOSTNAME) 
+# Yerel ortamlar için izin verilen hostlar.
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', '::1']
 
-# --- 2. UYGULAMA TANIMLARI ---
+# RENDER ile ilgili tüm ortam değişkeni okuma ve host ekleme satırları SİLİNDİ.
+
+
+# ----------------------------------------------------------------------
+# 2. UYGULAMA TANIMLARI
+# ----------------------------------------------------------------------
 
 INSTALLED_APPS = [
     'django.contrib.admin',
@@ -39,13 +37,14 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-    'sayim'
+    # Kendi Uygulamanız
+    'sayim' 
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    # === 🚨 DÜZELTME: Whitenoise Aktif Edildi (Statik Dosyalar (CSS/JS) İçin) ===
+    # Yerel ortamda Whitenoise'a gerek yoktur, ancak kalması sorun yaratmaz.
     'whitenoise.middleware.WhiteNoiseMiddleware', 
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -53,11 +52,6 @@ MIDDLEWARE = [
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
 ]
-
-# --- RENDER GÜVENLİK AYARLARI ---
-SECURE_SSL_REDIRECT = True
-SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
-CSRF_TRUSTED_ORIGINS = ['https://*.render.com'] 
 
 ROOT_URLCONF = 'stock_project.urls'
 
@@ -78,33 +72,71 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'stock_project.wsgi.application'
 
-
-# --- 3. VERİTABANI AYARLARI (RENDER İÇİN POSTGRESQL) ---
-try:
-    DATABASES = {
-        'default': dj_database_url.config(
-            default=os.environ.get('DATABASE_URL'),
-            conn_max_age=600 
-        )
+# ----------------------------------------------------------------------
+# 3. VERİTABANI AYARLARI (SADECE YEREL SQLite)
+# ----------------------------------------------------------------------
+# Bu kısım, önceki hatayı veren tüm karmaşık mantıktan arındırılmıştır.
+DATABASES = {
+    'default': {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
-except Exception:
-    DATABASES = {
-        'default': {
-            'ENGINE': 'django.db.backends.sqlite3',
-            'NAME': BASE_DIR / 'db.sqlite3',
-        }
-    }
+}
 
 
-# ... (Password validation, Internationalization ayarları aynı kalır) ...
+# ----------------------------------------------------------------------
+# 4. GÜVENLİK VE ŞİFRE DOĞRULAMALARI
+# ----------------------------------------------------------------------
+
+AUTH_PASSWORD_VALIDATORS = [
+    {
+        'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator',
+    },
+    {
+        'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator',
+    },
+]
 
 
-# --- 4. STATİK DOSYALAR (PRODUCTION İÇİN ZORUNLU) ---
+# ----------------------------------------------------------------------
+# 5. ULUSLARARASI DİL AYARLARI
+# ----------------------------------------------------------------------
+
+LANGUAGE_CODE = 'tr-TR'
+
+TIME_ZONE = 'Europe/Istanbul' 
+
+USE_I18N = True
+
+USE_TZ = True
+
+
+# ----------------------------------------------------------------------
+# 6. STATİK DOSYALAR
+# ----------------------------------------------------------------------
 
 STATIC_URL = '/static/'
+
+# STATIC_ROOT'un varlığını kontrol etmeden sadece tanımlıyoruz.
 STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
+# Sayım klasöründeki statik dosyaları gösterir.
 STATICFILES_DIRS = [
     os.path.join(BASE_DIR, 'static'),
 ]
+
+# Whitenoise yerine varsayılan depolamayı kullanıyoruz.
+STATICFILES_STORAGE = 'django.contrib.staticfiles.storage.StaticFilesStorage'
+
+
+# ----------------------------------------------------------------------
+# 7. DİĞER AYARLAR
+# ----------------------------------------------------------------------
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
