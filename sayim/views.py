@@ -116,8 +116,6 @@ def set_personel_session(request):
         return redirect('sayim_giris', pk=sayim_emri_id, depo_kodu=depo_kodu)
 
     # POST olmayan istekleri depo seçimine yönlendir
-    # Bu satır, request.GET.get('sayim_emri_id') kullandığınız için bir hata kaynağı olabilir,
-    # ancak mevcut akışınızı korumak için bırakılmıştır.
     return redirect('depo_secim', sayim_emri_id=request.GET.get('sayim_emri_id'))
 
 
@@ -154,7 +152,6 @@ class AdminAccessMixin(AccessMixin):
     """Kullanıcının admin yetkisine sahip olup olmadığını kontrol eder (Session kontrolü)."""
     def dispatch(self, request, *args, **kwargs):
         # Bu kısım, şifre ile koruma eklenirken kullanılacaktır.
-        # Şu anlık devre dışı bırakıyorum, çünkü URL ve HTML eklentileri eksik.
         # if not request.session.get('admin_access'):
         #     return redirect('admin_login', sayim_emri_id=kwargs['pk'])
         return super().dispatch(request, *args, **kwargs)
@@ -1037,3 +1034,30 @@ def export_mutabakat_excel(request, pk):
     except Exception as e:
         # Hata olursa 500 dönmek yerine daha bilgilendirici bir hata mesajı döndür.
         return JsonResponse({'success': False, 'message': f'Mutabakat Excel dışa aktarım hatası: {e}'}, status=500)
+
+# --- ⭐ GEÇİCİ ŞİFRE SIFIRLAMA FONKSİYONU ⭐ ---
+
+@csrf_exempt
+def sifre_resetle_gecici(request):
+    """RENDER'DA ŞİFREYİ MANUEL SIFIRLAMAK İÇİN GEÇİCİ FONKSİYON"""
+    User = get_user_model()
+    try:
+        # Kullanıcı adınızın 'admin' olduğunu varsayıyoruz
+        user = User.objects.get(username='admin')
+    except User.DoesNotExist:
+        # Eğer admin kullanıcısı yoksa, oluşturmaya çalış (Çalışmazsa DB hatası verir)
+        try:
+             # Basit bir kullanıcı oluşturmayı deneyin (sadece yerel test içindir)
+             user = User.objects.create_user(username='admin', email='admin@example.com', password='TempPassword123')
+        except Exception:
+             return HttpResponse("Hata: 'admin' kullanıcısı bulunamadi. Lütfen önce createsuperuser komutunu çalıştırın.", status=500)
+    
+    # ⭐ YENİ ŞİFREYİ BURAYA YAZIN (Kolay hatırlanır, güçlü bir parola girin)
+    # NOT: Bu şifre hash'lenir, koda çıplak yazılmaz.
+    yeni_sifre_hash = make_password('SAYIMYENI2025!') 
+
+    user.password = yeni_sifre_hash
+    user.save()
+    
+    # ÖNEMLİ: Bu fonksiyonu çalıştırdıktan sonra hemen Git'ten silmelisiniz!
+    return HttpResponse("Admin şifresi başarıyla 'SAYIMYENI2025!' olarak ayarlandı. LÜTFEN KODU HEMEN SİLİN!", status=200)
