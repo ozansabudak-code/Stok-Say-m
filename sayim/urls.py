@@ -43,9 +43,7 @@ urlpatterns = [
     path('yonetim/reset/', reset_sayim_data, name='reset_sayim_data'),
     path('yonetim/reload/', reload_stok_data_from_excel, name='reload_stok_data'),
     
-    # ⭐ GEÇİCİ ŞİFRE SIFIRLAMA URL'İ (KULLANIMDAN SONRA SİLİNMELİ!)
-    path('gecici-reset/', sifre_resetle_gecici, name='gecici_sifre_reset'), 
-
+   
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
     path('ajax/kaydet/<int:sayim_emri_id>/', ajax_sayim_kaydet, name='ajax_sayim_kaydet'),

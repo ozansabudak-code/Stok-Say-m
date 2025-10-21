@@ -1035,29 +1035,3 @@ def export_mutabakat_excel(request, pk):
         # Hata olursa 500 dönmek yerine daha bilgilendirici bir hata mesajı döndür.
         return JsonResponse({'success': False, 'message': f'Mutabakat Excel dışa aktarım hatası: {e}'}, status=500)
 
-# --- ⭐ GEÇİCİ ŞİFRE SIFIRLAMA FONKSİYONU ⭐ ---
-
-@csrf_exempt
-def sifre_resetle_gecici(request):
-    """RENDER'DA ŞİFREYİ MANUEL SIFIRLAMAK İÇİN GEÇİCİ FONKSİYON"""
-    User = get_user_model()
-    try:
-        # Kullanıcı adınızın 'admin' olduğunu varsayıyoruz
-        user = User.objects.get(username='admin')
-    except User.DoesNotExist:
-        # Eğer admin kullanıcısı yoksa, oluşturmaya çalış (Çalışmazsa DB hatası verir)
-        try:
-             # Basit bir kullanıcı oluşturmayı deneyin (sadece yerel test içindir)
-             user = User.objects.create_user(username='admin', email='admin@example.com', password='TempPassword123')
-        except Exception:
-             return HttpResponse("Hata: 'admin' kullanıcısı bulunamadi. Lütfen önce createsuperuser komutunu çalıştırın.", status=500)
-    
-    # ⭐ YENİ ŞİFREYİ BURAYA YAZIN (Kolay hatırlanır, güçlü bir parola girin)
-    # NOT: Bu şifre hash'lenir, koda çıplak yazılmaz.
-    yeni_sifre_hash = make_password('SAYIMYENI2025!') 
-
-    user.password = yeni_sifre_hash
-    user.save()
-    
-    # ÖNEMLİ: Bu fonksiyonu çalıştırdıktan sonra hemen Git'ten silmelisiniz!
-    return HttpResponse("Admin şifresi başarıyla 'SAYIMYENI2025!' olarak ayarlandı. LÜTFEN KODU HEMEN SİLİN!", status=200)
