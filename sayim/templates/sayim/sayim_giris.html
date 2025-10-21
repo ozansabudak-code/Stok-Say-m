@@ -92,15 +92,141 @@
 
 <script>
     // **********************************************
-    // GEMINI OKU FONKSİYONU BURAYA EKLENDİ
+    // JS FONKSİYONLARI GLOBAL KAPSAMA TAŞINDI (HATA DÜZELTME)
     // **********************************************
+
+    // --- TEMEL TANIMLAR (Global Kapsamda Erişilebilir Olmalı) ---
+    let DEPO_KODU = 'YOK';
+    let currentStokKod = '';
+    let currentPartiNo = 'YOK';
+    let currentRenk = 'YOK';
+    let currentSeriNo = 'YOK';
     
-    // --- YZ (GEMINI VISION) OKUMA FONKSİYONU ---
+    // CSRF Token Fonksiyonu (Django POST için kritik)
+    function getCookie(name) {
+        let cookieValue = null;
+        if (document.cookie && document.cookie !== '') {
+            const cookies = document.cookie.split(';');
+            for (let i = 0; i < cookies.length; i++) {
+                const cookie = cookies[i].trim();
+                if (cookie.startsWith(name + '=')) {
+                    cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
+                    break;
+                }
+            }
+        }
+        return cookieValue;
+    }
+
+    // --- 1. VARYANT DROPDOWN OLUŞTURMA İŞLEVİ (Global) ---
+    function updateVariantInputs(data) {
+        const partiNoContainer = document.getElementById('parti_no_container');
+        const renkContainer = document.getElementById('renk_container');
+
+        const createInput = (id, placeholder, value) => 
+            `<input type="text" id="${id}" placeholder="${placeholder}" value="${value || ''}">`;
+        
+        // 1. Parti No için
+        if (data.parti_varyantlar && data.parti_varyantlar.length > 0) {
+            let options = data.parti_varyantlar.map(p => `<option value="${p}">${p}</option>`).join('');
+            const selectedParti = data.parti_no || data.parti_varyantlar[0];
+            options = `<option value="${selectedParti}" selected>${selectedParti}</option>` + options.replace(`<option value="${selectedParti}">`, '').replace(`</option>`, '');
+            partiNoContainer.innerHTML = `<select id="parti_no_input">${options}</select>`;
+        } else {
+            partiNoContainer.innerHTML = createInput('parti_no_input', 'Parti No (Opsiyonel)', data.parti_no);
+        }
+
+        // 2. Renk/Varyant için
+        if (data.renk_varyantlar && data.renk_varyantlar.length > 0) {
+            let options = data.renk_varyantlar.map(r => `<option value="${r}">${r}</option>`).join('');
+            const selectedRenk = data.renk || data.renk_varyantlar[0];
+            options = `<option value="${selectedRenk}" selected>${selectedRenk}</option>` + options.replace(`<option value="${selectedRenk}">`, '').replace(`</option>`, '');
+            renkContainer.innerHTML = `<select id="renk_input">${options}</select>`;
+        } else {
+            renkContainer.innerHTML = createInput('renk_input', 'Renk/Varyant (Opsiyonel)', data.renk);
+        }
+        
+        setupAutoSearchListeners(); 
+    }
+
+    // --- 2. AKILLI ARAMA FONKSİYONU (Global) ---
+    function akilliStokAra(seriNo, stokKod, partiNo, renk, depoKod, barkodHamVeri = '') {
+        const urunBilgiAlani = document.getElementById('urun_bilgi_alani');
+        const stokKodInput = document.getElementById('stok_kod_input');
+
+        document.getElementById('urun_bilgi').innerText = 'Arama yapılıyor...';
+        document.getElementById('sistem_stok_goster').innerText = '0.00';
+        document.getElementById('last_sayim_goster').innerText = 'Bilinmiyor';
+        document.getElementById('kayit_mesaji').innerText = ''; 
+        urunBilgiAlani.classList.remove('status-found', 'status-missing'); 
+        urunBilgiAlani.classList.add('status-default'); 
+
+        const params = new URLSearchParams({
+            seri_no: seriNo || 'YOK',
+            stok_kod: stokKod || 'YOK',
+            parti_no: partiNo || 'YOK',
+            renk: renk || 'YOK',
+            depo_kod: depoKod,
+            barkod_ham_veri: barkodHamVeri || 'YOK'
+        });
+
+        fetch(`/ajax/stok-ara-akilli/?${params.toString()}`)
+            .then(response => {
+                if (!response.ok) {
+                    throw new Error(`Sunucu Hatası (${response.status}). Yanıt JSON değil.`);
+                }
+                return response.json();
+            })
+            .then(data => {
+                document.getElementById('urun_bilgi').innerText = data.urun_bilgi;
+                document.getElementById('last_sayim_goster').innerText = data.last_sayim;
+                
+                // Global değişkenleri güncelle
+                currentStokKod = data.stok_kod;
+                currentPartiNo = data.parti_no;
+                currentRenk = data.renk;
+                currentSeriNo = seriNo;
+                
+                const partiNoElement = document.getElementById('parti_no_input');
+                const renkElement = document.getElementById('renk_input');
+                
+                if (data.found) {
+                    // Tam eşleşme bulundu
+                    stokKodInput.value = data.stok_kod;
+                    document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
+                    urunBilgiAlani.classList.add('status-found'); 
+                    updateVariantInputs({ parti_no: data.parti_no, renk: data.renk });
+
+                } else if (data.parti_varyantlar && data.parti_varyantlar.length > 0 || data.renk_varyantlar && data.renk_varyantlar.length > 0) {
+                    // Stok koduna göre varyantlar bulundu (Dropdown'a dönüştür)
+                    currentStokKod = data.stok_kod;
+                    currentPartiNo = partiNo;
+                    currentRenk = renk;
+                    urunBilgiAlani.classList.add('status-default'); 
+                    updateVariantInputs(data);
+
+                } else {
+                    // Eşleşme yok
+                    urunBilgiAlani.classList.add('status-missing'); 
+                    updateVariantInputs({ parti_no: partiNo, renk: renk });
+                }
+                
+                // Güncel Dropdown/Input değerleriyle current değerleri senkronize et
+                currentPartiNo = partiNoElement ? partiNoElement.value.toUpperCase().trim() : 'YOK';
+                currentRenk = renkElement ? renkElement.value.toUpperCase().trim() : 'YOK';
+
+            })
+            .catch(error => {
+                document.getElementById('urun_bilgi').innerText = `Arama Hatası: ${error.message}`;
+                urunBilgiAlani.classList.add('status-missing'); 
+            });
+    }
+
+    // --- 3. GEMINI OKU FONKSİYONU (Global) ---
     function geminiOku(file) {
-        const SAYIM_EMRI_ID = document.getElementById('depo_kodu_gizli').innerText.trim(); // Sayım Emri ID'nizi buradan almalısınız
-        const DEPO_KODU = document.getElementById('depo_kodu_gizli').innerText.trim();
         const barkodInput = document.getElementById('barkod_input');
         const miktarInput = document.getElementById('miktar_input');
+        const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
         
         document.getElementById('gemini_mesaj').className = 'message';
         document.getElementById('gemini_mesaj').innerText = '📸 Görsel yükleniyor ve Gemini ile analiz ediliyor... Bu biraz sürebilir.';
@@ -110,56 +236,49 @@
         formData.append('sayim_emri_id', SAYIM_EMRI_ID);
         formData.append('depo_kodu', DEPO_KODU);
 
-        // CSRF Token Fonksiyonu (Django POST için kritik)
-        function getCookie(name) {
-            let cookieValue = null;
-            if (document.cookie && document.cookie !== '') {
-                const cookies = document.cookie.split(';');
-                for (let i = 0; i < cookies.length; i++) {
-                    const cookie = cookies[i].trim();
-                    if (cookie.startsWith(name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
-                    }
-                }
-            }
-            return cookieValue;
-        }
-        const CSRF_TOKEN = getCookie('csrftoken');
-
-        // DİKKAT: /ajax/gemini-ocr-analiz/ adresini Django views.py'da tanımlamanız gerekiyor.
         fetch(`/ajax/gemini-ocr-analiz/`, {
             method: 'POST',
             headers: {
-                'X-CSRFToken': CSRF_TOKEN,
+                'X-CSRFToken': getCookie('csrftoken'),
             },
             body: formData
         })
         .then(res => {
             if (!res.ok) {
-                // Hata durumunda bile JSON dönmeye çalış
-                return res.json().catch(() => {
-                    throw new Error(`Sunucu Hatası (${res.status}): Yanıt JSON formatında değil.`);
-                });
+                return res.json().catch(() => { throw new Error(`Sunucu Hatası: ${res.statusText}`); });
             }
             return res.json();
         })
         .then(data => {
             if (data.success) {
                 document.getElementById('gemini_mesaj').className = 'message success';
-                document.getElementById('gemini_mesaj').innerText = `✅ YZ Başarılı: Barkod/Seri No: ${data.barkod || '-'} | Miktar: ${data.miktar || '-'}`;
+                document.getElementById('gemini_mesaj').innerText = `✅ YZ Başarılı: Barkod: ${data.barkod || '-'} | Stok Kodu: ${data.stok_kod || '-'} | Miktar: ${data.miktar || '-'}`;
+
+                // --- KRİTİK OCR DESTEKLİ AKILLI ARAMA MANTIĞI ---
+                let search_seri = data.barkod || 'YOK';
+                let search_stok_kod = data.stok_kod || 'YOK';
+                let search_parti_no = data.parti_no || 'YOK';
+                let search_renk = data.renk || 'YOK';
 
                 // 1. Oku-Kodu ana barkod giriş alanına yaz
-                barkodInput.value = data.barkod || ''; 
+                barkodInput.value = search_seri !== 'YOK' ? search_seri : '';
                 
                 // 2. Miktarı Miktar giriş alanına yaz
                 miktarInput.value = data.miktar || ''; 
+                
+                // 3. Stok kodu, parti ve renk alanlarını Gemini verisiyle doldur
+                const stokKodInput = document.getElementById('stok_kod_input');
+                const partiInput = document.getElementById('parti_no_input');
+                const renkInput = document.getElementById('renk_input');
 
-                // 3. Stok kodu/barkod alanı dolduysa, otomatik arama tetikle
-                if (barkodInput.value) {
-                    akilliStokAra(barkodInput.value.toUpperCase().trim(), 'YOK', 'YOK', 'YOK', DEPO_KODU, barkodInput.value.toUpperCase().trim());
-                    miktarInput.focus(); // Kullanıcı doğrudan miktarı kontrol edip kaydetsin
-                }
+                stokKodInput.value = search_stok_kod !== 'YOK' ? search_stok_kod : stokKodInput.value;
+                if (partiInput) partiInput.value = search_parti_no !== 'YOK' ? search_parti_no : partiInput.value;
+                if (renkInput) renkInput.value = search_renk !== 'YOK' ? search_renk : renkInput.value;
+                
+                // 4. Akıllı Aramayı Başlat
+                akilliStokAra(search_seri, stokKodInput.value, partiInput.value, renkInput.value, DEPO_KODU, search_seri);
+                
+                miktarInput.focus(); 
 
             } else {
                 document.getElementById('gemini_mesaj').className = 'message error';
@@ -168,231 +287,107 @@
         })
         .catch(error => {
             document.getElementById('gemini_mesaj').className = 'message error';
-            document.getElementById('gemini_mesaj').innerText = `Kritik Hata: ${error.message}`;
+            document.getElementById('gemini_mesaj').innerText = `Kritik Hata: Analiz servisine ulaşılamadı. ${error.message}`;
         });
     }
 
 
-    document.addEventListener('DOMContentLoaded', () => {
-        // --- TEMEL TANIMLAR ---
-        const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
-        const DEPO_KODU = document.getElementById('depo_kodu_gizli').innerText.trim();
-        const PERSONEL_ADI = document.getElementById('personel_adi_gizli').innerText.trim();
-
-        // DOM Elementleri
+    // --- OLAY DİNLEYİCİLERİ ---
+    
+    // YENİ: Tüm arama inputları için ENTER/CHANGE dinleyicisi
+    function setupAutoSearchListeners() {
         const barkodInput = document.getElementById('barkod_input');
+        const allInputs = [barkodInput, document.getElementById('stok_kod_input'), 
+                            document.getElementById('parti_no_input'), 
+                            document.getElementById('renk_input')];
+        
+        // Dinleyicileri temizle (Çift tetiklemeyi önlemek için)
+        allInputs.forEach(input => {
+            if(input) {
+                input.removeEventListener('keydown', handleSearchEnter);
+                input.removeEventListener('change', handleSearchEnter);
+            }
+        });
+        
+        // Yeni dinleyicileri kur
+        allInputs.forEach(input => {
+            if (input) {
+                if(input.tagName === 'INPUT') {
+                    input.addEventListener('keydown', handleSearchEnter);
+                } else if (input.tagName === 'SELECT') {
+                    input.addEventListener('change', handleSearchEnter);
+                }
+            }
+        });
+    }
+
+    function handleSearchEnter(event) {
+        if (event.type === 'keydown' && event.key !== 'Enter') {
+            return;
+        }
+        if (event.type === 'keydown') {
+            event.preventDefault(); 
+        }
+
         const stokKodInput = document.getElementById('stok_kod_input');
+        const barkodInput = document.getElementById('barkod_input');
+        const partiNoElement = document.getElementById('parti_no_input');
+        const renkElement = document.getElementById('renk_input');
+        
+        const currentPartiNo = partiNoElement ? partiNoElement.value.toUpperCase().trim() : 'YOK';
+        const currentRenk = renkElement ? renkElement.value.toUpperCase().trim() : 'YOK';
+        const currentStokKod = stokKodInput.value.toUpperCase().trim();
+        const currentSeriNo = barkodInput.value.toUpperCase().trim();
+        
+        
+        if (event.target.id === 'barkod_input') {
+           akilliStokAra(currentSeriNo, 'YOK', 'YOK', 'YOK', DEPO_KODU, currentSeriNo);
+        } else {
+           akilliStokAra('YOK', currentStokKod, currentPartiNo, currentRenk, DEPO_KODU, 'YOK');
+        }
+    }
+
+
+    // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR) Dinleyicileri
+    function setupGeminiListeners() {
+        const imageInput = document.getElementById('image-input');
+        
+        document.getElementById('select-file-btn').addEventListener('click', () => {
+            imageInput.removeAttribute('capture'); 
+            imageInput.click();
+        });
+
+        document.getElementById('camera-btn').addEventListener('click', () => {
+            imageInput.setAttribute('capture', 'environment'); 
+            imageInput.click();
+        });
+
+        document.getElementById('image-input').addEventListener('change', function() {
+            if (this.files.length > 0) {
+                geminiOku(this.files[0]); 
+            }
+            this.removeAttribute('capture');
+        });
+    }
+
+
+    // DOM Yüklendiğinde Başlat
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- TEMEL TANIMLARI GÜNCELLE ---
+        DEPO_KODU = document.getElementById('depo_kodu_gizli').innerText.trim();
+        const SAYIM_EMRI_ID = "{{ sayim_emri.pk }}";
+        const PERSONEL_ADI = document.getElementById('personel_adi_gizli').innerText.trim();
         const miktarInput = document.getElementById('miktar_input');
+
+        // Olay Dinleyicilerini Başlat
+        setupGeminiListeners();
+        setupAutoSearchListeners();
         
-        const partiNoContainer = document.getElementById('parti_no_container');
-        const renkContainer = document.getElementById('renk_container');
-        const urunBilgiAlani = document.getElementById('urun_bilgi_alani');
-        const imageInput = document.getElementById('image-input'); // YENİ: Gizli dosya inputu
-
-        let currentStokKod = '';
-        let currentPartiNo = 'YOK';
-        let currentRenk = 'YOK';
-        let currentSeriNo = 'YOK';
-
-        // CSRF Token Fonksiyonu (Django POST için kritik)
-        function getCookie(name) {
-            let cookieValue = null;
-            if (document.cookie && document.cookie !== '') {
-                const cookies = document.cookie.split(';');
-                for (let i = 0; i < cookies.length; i++) {
-                    const cookie = cookies[i].trim();
-                    if (cookie.startsWith(name + '=')) {
-                        cookieValue = decodeURIComponent(cookie.substring(name.length + 1));
-                        break;
-                    }
-                }
-            }
-            return cookieValue;
-        }
-        const CSRF_TOKEN = getCookie('csrftoken');
-
-
-        // --- VARYANT DROPDOWN OLUŞTURMA İŞLEVİ ---
-        function updateVariantInputs(data) {
-            const createInput = (id, placeholder, value) => 
-                `<input type="text" id="${id}" placeholder="${placeholder}" value="${value || ''}">`;
-            
-            // 1. Parti No için
-            if (data.parti_varyantlar && data.parti_varyantlar.length > 0) {
-                let options = data.parti_varyantlar.map(p => `<option value="${p}">${p}</option>`).join('');
-                const selectedParti = data.parti_no || data.parti_varyantlar[0];
-                options = `<option value="${selectedParti}" selected>${selectedParti}</option>` + options.replace(`<option value="${selectedParti}">`, '').replace(`</option>`, '');
-                partiNoContainer.innerHTML = `<select id="parti_no_input">${options}</select>`;
-            } else {
-                partiNoContainer.innerHTML = createInput('parti_no_input', 'Parti No (Opsiyonel)', data.parti_no);
-            }
-
-            // 2. Renk/Varyant için
-            if (data.renk_varyantlar && data.renk_varyantlar.length > 0) {
-                let options = data.renk_varyantlar.map(r => `<option value="${r}">${r}</option>`).join('');
-                const selectedRenk = data.renk || data.renk_varyantlar[0];
-                options = `<option value="${selectedRenk}" selected>${selectedRenk}</option>` + options.replace(`<option value="${selectedRenk}">`, '').replace(`</option>`, '');
-                renkContainer.innerHTML = `<select id="renk_input">${options}</select>`;
-            } else {
-                renkContainer.innerHTML = createInput('renk_input', 'Renk/Varyant (Opsiyonel)', data.renk);
-            }
-            
-            // Yeni DOM elementleri oluşturulduğu için, onlara ENTER dinleyicilerini yeniden kur
-            setupAutoSearchListeners(); 
-        }
-
-
-        // --- HİBRİT ARAMA FONKSİYONU (views.py'ı çağırır) ---
-        function akilliStokAra(seriNo, stokKod, partiNo, renk, depoKod, barkodHamVeri = '') {
-            document.getElementById('urun_bilgi').innerText = 'Arama yapılıyor...';
-            document.getElementById('sistem_stok_goster').innerText = '0.00';
-            document.getElementById('last_sayim_goster').innerText = 'Bilinmiyor';
-            document.getElementById('kayit_mesaji').innerText = ''; 
-            urunBilgiAlani.classList.remove('status-found', 'status-missing'); 
-            urunBilgiAlani.classList.add('status-default'); 
-
-            const params = new URLSearchParams({
-                seri_no: seriNo || 'YOK',
-                stok_kod: stokKod || 'YOK',
-                parti_no: partiNo || 'YOK',
-                renk: renk || 'YOK',
-                depo_kod: depoKod,
-                barkod_ham_veri: barkodHamVeri || 'YOK'
-            });
-
-            fetch(`/ajax/stok-ara-akilli/?${params.toString()}`)
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error(`Sunucu Hatası (${response.status}). Yanıt JSON değil.`);
-                    }
-                    return response.json();
-                })
-                .then(data => {
-                    document.getElementById('urun_bilgi').innerText = data.urun_bilgi;
-                    document.getElementById('last_sayim_goster').innerText = data.last_sayim;
-                    
-                    // Global değişkenleri güncelle
-                    currentStokKod = data.stok_kod;
-                    currentPartiNo = data.parti_no;
-                    currentRenk = data.renk;
-                    currentSeriNo = seriNo;
-                    
-                    if (data.found) {
-                        // Tam eşleşme bulundu
-                        stokKodInput.value = data.stok_kod;
-                        document.getElementById('sistem_stok_goster').innerText = data.sistem_stok;
-                        urunBilgiAlani.classList.add('status-found'); 
-
-                        updateVariantInputs({ parti_no: data.parti_no, renk: data.renk });
-
-                    } else if (data.parti_varyantlar && data.parti_varyantlar.length > 0 || data.renk_varyantlar && data.renk_varyantlar.length > 0) {
-                        // Stok koduna göre varyantlar bulundu (Dropdown'a dönüştür)
-                        currentStokKod = data.stok_kod;
-                        currentPartiNo = partiNo;
-                        currentRenk = renk;
-                        urunBilgiAlani.classList.add('status-default'); 
-
-                        updateVariantInputs(data);
-                    } else {
-                        // Eşleşme yok
-                        urunBilgiAlani.classList.add('status-missing'); 
-                        
-                        updateVariantInputs({ parti_no: partiNo, renk: renk });
-                    }
-                    
-                    // Güncel Dropdown/Input değerleriyle current değerleri senkronize et
-                    const partiNoElement = document.getElementById('parti_no_input');
-                    const renkElement = document.getElementById('renk_input');
-                    currentPartiNo = partiNoElement ? partiNoElement.value.toUpperCase().trim() : 'YOK';
-                    currentRenk = renkElement ? renkElement.value.toUpperCase().trim() : 'YOK';
-                })
-                .catch(error => {
-                    document.getElementById('urun_bilgi').innerText = `Arama Hatası: ${error.message}`;
-                    urunBilgiAlani.classList.add('status-missing'); 
-                });
-        }
-
-        // --- OLAY DİNLEYİCİLERİ ---
-        
-        // YENİ: Tüm arama inputları için ENTER/CHANGE dinleyicisi (DROPDOWN DÜZELTMESİ)
-        function setupAutoSearchListeners() {
-            const allInputs = [barkodInput, document.getElementById('stok_kod_input'), 
-                                document.getElementById('parti_no_input'), 
-                                document.getElementById('renk_input')];
-            
-            // Dinleyicileri temizle (Çift tetiklemeyi önlemek için)
-            allInputs.forEach(input => {
-                if(input) {
-                    input.removeEventListener('keydown', handleSearchEnter);
-                    input.removeEventListener('change', handleSearchEnter);
-                }
-            });
-            
-            // Yeni dinleyicileri kur
-            allInputs.forEach(input => {
-                if (input) {
-                    if(input.tagName === 'INPUT') {
-                        input.addEventListener('keydown', handleSearchEnter);
-                    } else if (input.tagName === 'SELECT') {
-                        input.addEventListener('change', handleSearchEnter);
-                    }
-                }
-            });
-        }
-
-        function handleSearchEnter(event) {
-            if (event.type === 'keydown' && event.key !== 'Enter') {
-                return;
-            }
-            if (event.type === 'keydown') {
-                event.preventDefault(); 
-            }
-
-            const partiNoElement = document.getElementById('parti_no_input');
-            const renkElement = document.getElementById('renk_input');
-            
-            const currentPartiNo = partiNoElement ? partiNoElement.value.toUpperCase().trim() : 'YOK';
-            const currentRenk = renkElement ? renkElement.value.toUpperCase().trim() : 'YOK';
-            const currentStokKod = stokKodInput.value.toUpperCase().trim();
-            const currentSeriNo = barkodInput.value.toUpperCase().trim();
-            
-            
-            if (event.target.id === 'barkod_input') {
-               akilliStokAra(currentSeriNo, 'YOK', 'YOK', 'YOK', DEPO_KODU, currentSeriNo);
-            } else {
-               akilliStokAra('YOK', currentStokKod, currentPartiNo, currentRenk, DEPO_KODU, 'YOK');
-            }
-        }
-
-
-        // 3. KAMERA/DOSYA BUTONLARI (Bölüm B - Gemini/OCR) Dinleyicileri
-        function setupGeminiListeners() {
-            // Dosyadan Seç butonu tıklandığında gizli input'u tetikle
-            document.getElementById('select-file-btn').addEventListener('click', () => {
-                imageInput.removeAttribute('capture'); // Kamera modunu kapat
-                imageInput.click();
-            });
-
-            // Kamera butonu tıklandığında gizli input'u kamera modunda tetikle
-            document.getElementById('camera-btn').addEventListener('click', () => {
-                imageInput.setAttribute('capture', 'environment'); // Arka kamerayı aç
-                imageInput.click();
-            });
-
-            // Görüntü seçildiğinde/çekildiğinde Gemini'yi tetikle
-            imageInput.addEventListener('change', function() {
-                if (this.files.length > 0) {
-                    geminiOku(this.files[0]); 
-                }
-                this.removeAttribute('capture');
-            });
-        }
-
-
         // 4. Detaylı Arama Düğmesi
         document.getElementById('ara-btn').addEventListener('click', function() {
             const partiNoElement = document.getElementById('parti_no_input');
             const renkElement = document.getElementById('renk_input');
+            const stokKodInput = document.getElementById('stok_kod_input');
             
             const stokKod = stokKodInput.value.toUpperCase().trim();
             const partiNo = partiNoElement ? partiNoElement.value.toUpperCase().trim() : 'YOK'; 
@@ -429,7 +424,7 @@
                 method: 'POST',
                 headers: {
                     "Content-Type": "application/json",
-                    'X-CSRFToken': CSRF_TOKEN, 
+                    'X-CSRFToken': getCookie('csrftoken'), 
                 },
                 body: JSON.stringify(data)
             })
@@ -451,14 +446,8 @@
             });
         });
 
-        // Sayfa tamamen yüklendiğinde tüm olay dinleyicilerini kur ve ilk aramayı yap
-        setupGeminiListeners();
-        setupAutoSearchListeners();
-        
-        // İlk yüklemede, eğer barkod veya stok kodu boşsa, varsayılan bir arama yap
-        if (!barkodInput.value && !stokKodInput.value) {
-            akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
-        }
+        // İlk yüklemede arama yap
+        akilliStokAra('YOK', 'YOK', 'YOK', 'YOK', DEPO_KODU, 'YOK');
     });
 </script>
 </body>
