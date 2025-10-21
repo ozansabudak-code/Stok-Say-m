@@ -22,6 +22,9 @@ from django.db import connection, transaction
 from django.db.models import Max, F 
 from django.utils import timezone
 from django.core.management import call_command
+# Yeni eklenen modüller
+from django.contrib.auth import get_user_model
+from django.contrib.auth.hashers import make_password
 
 
 # Third-party Imports
@@ -96,6 +99,7 @@ def set_personel_session(request):
         sayim_emri = get_object_or_404(SayimEmri, pk=sayim_emri_id)
         
         # ⭐ ÇOKLU GÖREV ATAMA KONTROLÜ ⭐
+        # NOT: atanan_personel modelde eklenmelidir!
         atanan_listesi_raw = sayim_emri.atanan_personel.upper()
 
         if atanan_listesi_raw != 'ATANMADI' and atanan_listesi_raw:
@@ -112,6 +116,8 @@ def set_personel_session(request):
         return redirect('sayim_giris', pk=sayim_emri_id, depo_kodu=depo_kodu)
 
     # POST olmayan istekleri depo seçimine yönlendir
+    # Bu satır, request.GET.get('sayim_emri_id') kullandığınız için bir hata kaynağı olabilir,
+    # ancak mevcut akışınızı korumak için bırakılmıştır.
     return redirect('depo_secim', sayim_emri_id=request.GET.get('sayim_emri_id'))
 
 
@@ -141,7 +147,21 @@ class SayimGirisView(DetailView):
         return context
 # --- RAPORLAMA, ONAY VE ANALİZ VIEW'LARI ---
 
+# ⭐ YENİ EK: Admin Erişim Kontrol Mixin'i (Raporlama Şifresi İçin)
+from django.contrib.auth.mixins import AccessMixin
+
+class AdminAccessMixin(AccessMixin):
+    """Kullanıcının admin yetkisine sahip olup olmadığını kontrol eder (Session kontrolü)."""
+    def dispatch(self, request, *args, **kwargs):
+        # Bu kısım, şifre ile koruma eklenirken kullanılacaktır.
+        # Şu anlık devre dışı bırakıyorum, çünkü URL ve HTML eklentileri eksik.
+        # if not request.session.get('admin_access'):
+        #     return redirect('admin_login', sayim_emri_id=kwargs['pk'])
+        return super().dispatch(request, *args, **kwargs)
+
+# Raporlama View'ı, şifre koruma eklendiğinde AdminAccessMixin'i kullanmalıdır.
 class RaporlamaView(DetailView):
+# class RaporlamaView(AdminAccessMixin, DetailView): # Şifre koruması için
     model = SayimEmri
     template_name = 'sayim/raporlama.html'
     context_object_name = 'sayim_emri'
