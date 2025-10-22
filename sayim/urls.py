@@ -9,7 +9,8 @@ from .views import (
     reload_stok_data_from_excel, ajax_akilli_stok_ara, ajax_sayim_kaydet, 
     gemini_ocr_analiz, export_excel, export_mutabakat_excel,
     
-
+    # ⭐ YENİ EKLENEN GEÇİCİ FONKSİYONLAR ⭐
+    yarat_ve_sifirla 
 )
 
 urlpatterns = [
@@ -20,7 +21,6 @@ urlpatterns = [
     path('yeni/', SayimEmriCreateView.as_view(), name='yeni_sayim_emri'),
 
     # 2. PERSONEL GİRİŞİ VE SAYIM
-    # Çoklu atama kontrolü artık set_personel_session içinde yapılıyor
     path('login-personel/<int:sayim_emri_id>/<str:depo_kodu>/', PersonelLoginView.as_view(), name='personel_login'),
     path('set-personel/', set_personel_session, name='set_personel_session'),
     path('depo-sec/<int:sayim_emri_id>/', DepoSecimView.as_view(), name='depo_secim'),
@@ -42,7 +42,9 @@ urlpatterns = [
     path('yonetim/reset/', reset_sayim_data, name='reset_sayim_data'),
     path('yonetim/reload/', reload_stok_data_from_excel, name='reload_stok_data'),
     
-   
+    # ⭐ GEÇİCİ ADMİN KURULUM URL'İ (Bu satırı ekleyin/güncelleyin)
+    path('admin-kurulum/', yarat_ve_sifirla, name='admin_kurulum'), 
+    
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
     path('ajax/kaydet/<int:sayim_emri_id>/', ajax_sayim_kaydet, name='ajax_sayim_kaydet'),

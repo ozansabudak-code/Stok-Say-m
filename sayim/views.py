@@ -1034,4 +1034,3 @@ def export_mutabakat_excel(request, pk):
     except Exception as e:
         # Hata olursa 500 dönmek yerine daha bilgilendirici bir hata mesajı döndür.
         return JsonResponse({'success': False, 'message': f'Mutabakat Excel dışa aktarım hatası: {e}'}, status=500)
-
