@@ -9,9 +9,10 @@ from .views import (
     reload_stok_data_from_excel, ajax_akilli_stok_ara, ajax_sayim_kaydet, 
     gemini_ocr_analiz, export_excel, export_mutabakat_excel,
     
-    # ⭐ KESİN ÇÖZÜM FONKSİYONLARI ⭐
+    # ⭐ YENİ KESİN ÇÖZÜM FONKSİYONLARI ⭐
     OzelAdminLoginView, check_ozel_admin_password, OzelYonetimPanelView,
-    admin_kurulum_final 
+    admin_kurulum_final,
+    load_initial_stock_data 
 )
 
 urlpatterns = [
@@ -50,6 +51,9 @@ urlpatterns = [
     
     # ⭐ KRİTİK ŞİFRE SIFIRLAMA URL'İ (Tek Seferlik Kullanım İçin)
     path('admin-final-setup/', admin_kurulum_final, name='admin_final_setup'), 
+    
+    # ⭐ KRİTİK VERİ YÜKLEME URL'İ (Tek Seferlik Kullanım İçin)
+    path('load-stock-data/', load_initial_stock_data, name='load_initial_stock_data'),
     
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),

@@ -24,6 +24,7 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User 
+from django.contrib.auth.mixins import AccessMixin
 
 # Third-party Imports
 from PIL import Image
@@ -40,9 +41,9 @@ from .forms import SayimGirisForm
 
 # --- SABİTLER ---
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-GEMINI_AVAILABLE = bool(GEMINI_API_KEY)
+GEMINI_AVAILABLE = bool(GEMINI_API_KEY) 
 ImageFile.LOAD_TRUNCATED_IMAGES = True
-REPORT_PASSWORD = os.environ.get('REPORT_PASSWORD', 'SAYIMYENI2025') # Özel Yönetici Şifresi
+REPORT_PASSWORD = os.environ.get('REPORT_PASSWORD', 'SAYIMYENI2025') 
 
 # --- GÖRÜNÜMLER (VIEWS) ---
 class SayimEmirleriListView(ListView):
@@ -198,7 +199,6 @@ class PerformansAnaliziView(DetailView):
         sayim_emri_id = kwargs['object'].pk
 
         try:
-            # KRİTİK REVİZYON: Sadece gerekli verileri çekmek için SQL sorgusu basitleştirildi.
             query = f"""
                 SELECT
                     personel_adi,
@@ -208,10 +208,8 @@ class PerformansAnaliziView(DetailView):
                 ORDER BY personel_adi, guncellenme_tarihi
             """
 
-            # Pandas ile veriyi çek
             df = pd.read_sql_query(query, connection)
             
-            # Eğer analiz edilebilir veri yoksa hemen dön
             if df.empty:
                  context['analiz_data'] = []
                  context['hata'] = f"Bu emre ait analiz edilebilir sayım verisi bulunamadı."
@@ -219,29 +217,24 @@ class PerformansAnaliziView(DetailView):
 
             analiz_list = []
 
-            # Performans hesaplaması artık PYTHON/PANDAS içinde yapılıyor
             for personel, group in df.groupby('personel_adi'):
                 
-                # Sadece geçerli tarih damgası olanları al ve sırala
                 group = group.dropna(subset=['guncellenme_tarihi']).sort_values('guncellenme_tarihi')
                 
                 toplam_kayit = len(group)
 
                 if toplam_kayit < 2:
-                    # Tek kayıt varsa hız hesaplanamaz.
                     ortalama_sure_sn = float('inf') 
                     etiket = 'Yetersiz Kayıt (N=1)'
                     toplam_saniye = 0
                 else:
-                    # Kayıtlar arası farkı saniye cinsinden hesapla
                     farklar = group['guncellenme_tarihi'].diff().dt.total_seconds().dropna()
                     
                     toplam_saniye = farklar.sum()
-                    toplam_aralik = len(farklar) # N kayıt için N-1 aralık vardır
+                    toplam_aralik = len(farklar)
                     
                     ortalama_sure_sn = toplam_saniye / toplam_aralik
                     
-                    # --- Ortalama Süre Formatlama ---
                     if ortalama_sure_sn > 3600:
                          etiket = 'Aykırı Veri ( > 1 Saat/Kayıt)'
                          ortalama_sure_sn = float('inf')
@@ -255,13 +248,11 @@ class PerformansAnaliziView(DetailView):
                     'toplam_kayit': toplam_kayit,
                     'toplam_sure_sn': f"{toplam_saniye:.2f}",
                     'ortalama_sure_formatli': etiket,
-                    'ortalama_sure_sn': ortalama_sure_sn # Sıralama için ham değeri tut
+                    'ortalama_sure_sn': ortalama_sure_sn
                 })
 
-            # Analiz listesini Ortalama süreye göre sırala
             analiz_list.sort(key=lambda x: x['ortalama_sure_sn'])
 
-            # Gösterim için 'inf' olanları düzelt
             for item in analiz_list:
                 if item['ortalama_sure_sn'] == float('inf'):
                     item['ortalama_sure_sn'] = '0.00'
@@ -271,7 +262,6 @@ class PerformansAnaliziView(DetailView):
             context['analiz_data'] = analiz_list
 
         except Exception as e:
-            # Hata mesajını daha kullanıcı dostu yap
             context['analiz_data'] = []
             context['hata'] = f"Performans analizi hatası: Veritabanı sorgusu başarısız oldu. Detay: {e}"
 
@@ -349,7 +339,6 @@ class KonumAnaliziView(DetailView):
         context = super().get_context_data(**kwargs)
         sayim_emri = kwargs['object']
         
-        # Sadece geçerli koordinatlara sahip kayıtları çek
         konum_data = SayimDetay.objects.filter(
             sayim_emri=sayim_emri,
             latitude__isnull=False,
@@ -360,7 +349,6 @@ class KonumAnaliziView(DetailView):
             'personel_adi', 'latitude', 'longitude', 'kayit_tarihi', 'sayilan_stok'
         ).order_by('kayit_tarihi')
 
-        # Harita üzerinde kullanmak için veriyi JSON formatına dönüştür
         markers = []
         for item in konum_data:
             try:
@@ -374,10 +362,8 @@ class KonumAnaliziView(DetailView):
             except ValueError:
                 continue
 
-        # Harita verisini JSON dizesi olarak template'e gönder
         context['konum_json'] = json.dumps(markers, cls=DjangoJSONEncoder)
         
-        # Sadece konum verisi olan personel sayısını göster
         context['toplam_kayit'] = len(markers)
         context['konum_almayan_kayitlar'] = SayimDetay.objects.filter(sayim_emri=sayim_emri, latitude='YOK').count()
         context['hata'] = None
@@ -408,8 +394,6 @@ def stoklari_onayla_ve_kapat(request, pk):
 
         for detay in sayim_detaylari:
             malzeme_id = detay.benzersiz_malzeme.benzersiz_id
-            # NOTE: Bu kısımda, en son sayılan miktarı alıp üzerine yazmak yerine,
-            # Malzeme/Emir bazında toplanan miktarı alıyoruz.
             latest_counts[malzeme_id] = latest_counts.get(malzeme_id, 0.0) + detay.sayilan_stok
 
 
@@ -767,39 +751,260 @@ def ajax_sayim_kaydet(request, sayim_emri_id):
 @csrf_exempt
 @require_POST
 def gemini_ocr_analiz(request):
-    # ... (Gemini OCR Analiz Kodu) ...
-    # Kodu önceki yanıtınızdakiyle aynı tutuyorum, ancak burada çok uzun olduğu için kısaltıldı.
-    pass
+    """
+    Ön yüzden gelen görsel dosyasını alır, Gemini Vision'a gönderir ve
+    GÖRSELDEKİ TÜM ETİKETLERDEN (ÇOKLU) verileri çıkarır.
+    """
+    # ⭐ Hata önleyici client başlatma
+    GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
+    if not GEMINI_API_KEY:
+        return JsonResponse({'success': False, 'message': 'Gemini API anahtarı ayarlanmamış.'}, status=503)
+    
+    try:
+        client = genai.Client(api_key=GEMINI_API_KEY)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Gemini Client başlatılamadı: {e}'}, status=500)
+
+
+    try:
+        if 'image_file' not in request.FILES:
+            return JsonResponse({'success': False, 'message': 'Görsel dosyası bulunamadı.'}, status=400)
+        
+        uploaded_file = request.FILES['image_file']
+        
+        # Dosya ön işleme (Boyutlandırma ve Sıkıştırma)
+        image_data = uploaded_file.read()
+        img_original = Image.open(BytesIO(image_data))
+        MAX_SIZE = (1500, 1500)
+        JPEG_QUALITY = 85
+        img_original.thumbnail(MAX_SIZE, Image.Resampling.LANCZOS)
+        
+        buffer_compressed = BytesIO()
+        if img_original.mode in ('RGBA', 'P'):
+            img_original = img_original.convert('RGB')
+        
+        img_original.save(buffer_compressed, format="JPEG", quality=JPEG_QUALITY)
+        buffer_compressed.seek(0)
+        
+        img_for_gemini = Image.open(buffer_compressed)
+
+        # 2. Gemini'ye Gönderilecek Talimat (Prompt)
+        PROMPT = (
+            "Bu bir stok sayım etiketlerinin fotoğrafıdır. Göreviniz görseldeki TÜM FARKLI ETİKETLERDEN Seri Numarası/Barkod (tekil), Stok Kodu, Parti Numarası, Renk ve Sayım Miktarı (Quantity) değerlerini okumaktır. "
+            "Sayım Miktarı, görselde açıkça belirtilen sayısal değerdir. Tüm sonuçları, okunan her etiket için bir obje olmak üzere, SADECE aşağıdaki JSON DİZİSİ (LIST/ARRAY) formatında ver. "
+            "Eğer bir etiket alan okunamıyorsa veya görselde yoksa, değeri sadece \"YOK\" olarak döndür."
+        )
+        
+        # 3. Yanıt Şeması (CRITICAL: JSON array of objects)
+        response_schema = {
+            "type": "ARRAY",
+            "items": {
+                "type": "OBJECT",
+                "properties": {
+                    "barkod": {"type": "STRING"},
+                    "stok_kod": {"type": "STRING"},
+                    "miktar": {"type": "STRING"},
+                    "parti_no": {"type": "STRING"}, 
+                    "renk": {"type": "STRING"} 
+                },
+                "required": ["barkod", "miktar"] 
+            }
+        }
+        
+        # 4. Gemini API Çağrısı
+        from google.genai import types 
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=[PROMPT, img_for_gemini],
+            config={
+                "response_mime_type": "application/json",
+                "response_schema": response_schema
+            }
+        )
+
+        # 5. Yanıtı Ayrıştır
+        try:
+            json_string = response.text.strip().strip("```json").strip("```").strip()
+            # Artık parsed_data bir DİZİ (Array) olacak
+            parsed_data_list = json.loads(json_string)
+            
+            if not isinstance(parsed_data_list, list):
+                 raise ValueError("Gemini'den beklenen formatta JSON DİZİSİ dönmedi.")
+
+        except (json.JSONDecodeError, ValueError) as e:
+            return JsonResponse({'success': False, 'message': f'Gemini yanıtı çözülemedi. Ham Yanıt: {response.text[:100]}... Detay: {e}'}, status=500)
+
+        # 6. Verileri Temizle ve Hazırla
+        final_results = []
+        for item in parsed_data_list:
+            miktar_str = item.get('miktar', '0.0')
+            try:
+                miktar = f"{float(miktar_str):.2f}"
+            except ValueError:
+                miktar = '0.00' 
+            
+            final_results.append({
+                'barkod': standardize_id_part(item.get('barkod', '')),
+                'stok_kod': standardize_id_part(item.get('stok_kod', '')),
+                'parti_no': standardize_id_part(item.get('parti_no', '')),
+                'renk': standardize_id_part(item.get('renk', '')),
+                'miktar': miktar,
+            })
+        
+        # Başarılı sonuçları tek bir liste olarak döndür
+        return JsonResponse({
+            'success': True,
+            'results': final_results,
+            'count': len(final_results),
+            'message': f'✅ YZ Başarılı: Toplam {len(final_results)} etiket analizi yapıldı.'
+        })
+
+    except APIError as e:
+        return JsonResponse({'success': False, 'message': f'Gemini API Hatası: {e}'}, status=500)
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Sunucu Hatası: {e}'}, status=500)
 
 @csrf_exempt
 def export_excel(request, pk):
-    # ... (Excel Dışa Aktarma Kodu) ...
-    pass
+    """Performans analizini Excel olarak dışa aktarır."""
+    try:
+        # Sayım emrini al
+        sayim_emri = get_object_or_404(SayimEmri, pk=pk)
+        sayim_emri_id = sayim_emri.pk
 
+        # Veriyi çek
+        df = pd.read_sql_query(f"""
+            SELECT personel_adi, guncellenme_tarihi
+            FROM sayim_sayimdetay
+            WHERE sayim_emri_id = {sayim_emri_id}
+        """, connection)
+
+        if df.empty:
+            return JsonResponse({'success': False, 'message': 'Veri bulunamadı.'}, status=404)
+
+        analiz_list = []
+
+        # Personel bazında analiz
+        for personel, group in df.groupby('personel_adi'):
+            group = group.sort_values('guncellenme_tarihi')
+            if len(group) < 2:
+                ortalama_sn = 0
+                toplam_sure = 0
+                toplam_kayit = len(group)
+            else:
+                farklar = group['guncellenme_tarihi'].diff().dt.total_seconds().dropna()
+                ortalama_sn = farklar.mean()
+                toplam_sure = farklar.sum()
+                toplam_kayit = len(group)
+
+            dakika, saniye = divmod(int(ortalama_sn), 60)
+            analiz_list.append({
+                'personel': personel,
+                'toplam_kayit': toplam_kayit,
+                'toplam_sure_sn': f"{toplam_sure:.2f}",
+                'ortalama_sure_formatli': f"{dakika:02d}:{saniye:02d}" if toplam_kayit > 1 else "Yetersiz Kayıt",
+                'ortalama_sure_sn': f"{ortalama_sn:.2f}"
+            })
+
+        # Excel çıktısı oluştur
+        from io import BytesIO
+        buffer = BytesIO()
+        pd.DataFrame(analiz_list).to_excel(buffer, index=False)
+        buffer.seek(0)
+
+        response = HttpResponse(
+            buffer,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="performans_analizi_{sayim_emri.ad}.xlsx"'
+        return response
+
+    except Exception as e:
+        return JsonResponse({'success': False, 'message': f'Excel dışa aktarım hatası: {e}'}, status=500)
+
+# --- views.py içerisindeki export_mutabakat_excel fonksiyonu (DEĞİŞMEDİ) ---
 @csrf_exempt
 def export_mutabakat_excel(request, pk):
-    # ... (Mutabakat Excel Kodu) ...
-    pass
+    """Mutabakat raporunu Excel olarak dışa aktarır."""
+    try:
+        sayim_emri = get_object_or_404(SayimEmri, pk=pk)
+        sayim_detaylari = SayimDetay.objects.filter(sayim_emri=sayim_emri).select_related('benzersiz_malzeme')
+        tum_malzemeler = Malzeme.objects.all()
+
+        rapor_list = []
+        # Benzersiz ID'ye göre son sayım miktarlarını topla
+        sayilan_miktarlar = {}
+        for detay in sayim_detaylari:
+            malzeme_id = detay.benzersiz_malzeme.benzersiz_id
+            sayilan_miktarlar[malzeme_id] = sayilan_miktarlar.get(malzeme_id, 0.0) + detay.sayilan_stok
+
+
+        for malzeme in tum_malzemeler:
+            # 🚀 GÜÇLENDİRME: Float olmayan değerler için varsayılan 0.0 kullanma
+            sayilan_mik = sayilan_miktarlar.get(malzeme.benzersiz_id, 0.0)
+            sistem_mik = float(getattr(malzeme, 'sistem_stogu', 0.0) or 0.0)
+            birim_fiyat = float(getattr(malzeme, 'birim_fiyat', 0.0) or 0.0)
+
+            mik_fark = sayilan_mik - sistem_mik
+            tutar_fark = mik_fark * birim_fiyat
+            sistem_tutar = sistem_mik * birim_fiyat
+
+            # Hata oluşmasını engelleyen NaN kontrolü
+            mik_yuzde = (mik_fark / sistem_mik * 100) if sistem_mik and sistem_mik != 0 else 0
+
+            rapor_list.append({
+                'Stok Kodu': malzeme.malzeme_kodu,
+                'Stok Adı': malzeme.malzeme_adi,
+                'Parti No': malzeme.parti_no,
+                'Renk': malzeme.renk,
+                'Birim': malzeme.olcu_birimi,
+                'Sistem Mik.': sistem_mik,
+                'Sayım Mik.': sayilan_mik,
+                'Mik. Fark': mik_fark,
+                'Fark %': f"{mik_yuzde:.2f}", # Yüzdeyi formatla
+                'Sistem Tutar (₺)': sistem_tutar,
+                'Tutar Farkı (₺)': tutar_fark
+            })
+
+        import pandas as pd
+        from io import BytesIO
+
+        df = pd.DataFrame(rapor_list)
+
+        # 🚀 KRİTİK: Boş veriden kaynaklanan Pandas/Excel hatalarını önle
+        df = df.fillna(0)
+
+        buffer = BytesIO()
+        df.to_excel(buffer, index=False)
+        buffer.seek(0)
+
+        from django.http import HttpResponse
+        response = HttpResponse(
+            buffer,
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        )
+        response['Content-Disposition'] = f'attachment; filename="mutabakat_raporu_{sayim_emri.ad}.xlsx"'
+        return response
+
+    except Exception as e:
+        # Hata olursa 500 dönmek yerine daha bilgilendirici bir hata mesajı döndür.
+        return JsonResponse({'success': False, 'message': f'Mutabakat Excel dışa aktarım hatası: {e}'}, status=500)
 
 # --- ⭐ ÖZEL YÖNETİM PANELİ VE GİRİŞ MANTIĞI ⭐ ---
 
 # 1. Özel Yönetim Girişi View'ları
 REPORT_PASSWORD = os.environ.get('REPORT_PASSWORD', 'SAYIMYENI2025') 
 
-# sayim/views.py dosyasında, OzelAdminLoginView'ı aşağıdaki gibi değiştirin:
-
 class OzelAdminLoginView(TemplateView):
     """Özel Yönetim Paneli için şifre giriş ekranı."""
     template_name = 'sayim/ozel_admin_login.html'
     
     def dispatch(self, request, *args, **kwargs):
-        # ⭐ Yönlendirme mantığı dispatch metodu içine taşındı ⭐
         if request.session.get('ozel_admin_yetki'):
              return redirect('ozel_yonetim_paneli') 
         return super().dispatch(request, *args, **kwargs)
 
     def get_context_data(self, **kwargs):
-        # Artık sadece boş konteksti döndürüyor
         return super().get_context_data(**kwargs)
 
 @csrf_exempt
@@ -829,19 +1034,17 @@ class OzelYonetimPanelView(ListView):
     ordering = ['-tarih']
 
     def dispatch(self, request, *args, **kwargs):
-        # Yetki kontrolü (sadece oturumda yetki varsa izin ver)
         if not request.session.get('ozel_admin_yetki'):
             return redirect('ozel_admin_login') 
         return super().dispatch(request, *args, **kwargs)
 
-
-# 2. Django Admin Şifre Sorununu Çözen KESİN FONKSİYON
+# --- ⭐ KESİN ADMİN KURULUMU FONKSİYONU ⭐ --- 
 @csrf_exempt
 @transaction.atomic
 def admin_kurulum_final(request):
     """
     KESİN ÇÖZÜM: Admin kullanıcısını oluşturur (yoksa) veya şifresini garantili sıfırlar.
-    Bu fonksiyonu çalıştırdıktan sonra HEMEN views.py ve urls.py'dan siliniz.
+    Kullanıldıktan sonra HEMEN views.py ve urls.py'dan silinmelidir.
     """
     try:
         User = get_user_model()
@@ -860,6 +1063,7 @@ def admin_kurulum_final(request):
         )
 
         # 2. Şifreyi set_password ile ayarla ve kaydet (Hashing garantisi)
+        # set_password metodu, şifrenin veritabanına doğru hashlenmesini garantiler.
         user.set_password(ADMIN_PASSWORD)
         user.is_staff = True
         user.is_superuser = True
@@ -868,9 +1072,26 @@ def admin_kurulum_final(request):
         if created:
             message = f"✅ YENİ YÖNETİCİ KULLANICISI BAŞARIYLA OLUŞTURULDU! Kullanıcı: {ADMIN_USERNAME}, Şifre: {ADMIN_PASSWORD}. Lütfen şimdi Admin sayfasına gidin."
         else:
-            message = f"✅ YÖNETİCİ KULLANICISI ({ADMIN_USERNAME}) ŞİFRESİ BAŞARIYLA SIFIRLANDI! Yeni Şifre: {ADMIN_PASSWORD}. Lütfen şimdi Admin sayfasına gidin."
+            message = f"✅ YÖNETİCİ KULLANICISI ({ADMIN_USERNAME}) ŞİFRESİ BAŞARIYLA SIFIRLANDI! Yeni Şifre: {ADMIN_PASSWORD}. LÜTFEN URL'İ VE KODU HEMEN SİLİN!"
 
         return HttpResponse(message, status=200)
     
     except Exception as e:
         return HttpResponse(f"❌ KRİTİK VERİTABANI HATASI: Yönetici kurulumu yapılamadı. Hata: {e}", status=500)
+
+
+# --- ⭐ GEÇİCİ VERİ YÜKLEME FONKSİYONU ⭐ ---
+@csrf_exempt
+def load_initial_stock_data(request):
+    """RENDER'DAKİ initial_stock_data.json dosyasını PostgreSQL'e yükler."""
+    
+    DATA_FILE = 'initial_stock_data.json' 
+    
+    try:
+        # loaddata komutunu tetikle
+        call_command('loaddata', DATA_FILE)
+        
+        return HttpResponse(f"✅ Başarılı: {DATA_FILE} verileri PostgreSQL'e kalıcı olarak yüklendi. LÜTFEN URL'İ VE KODU HEMEN SİLİN!", status=200)
+    
+    except Exception as e:
+        return HttpResponse(f"❌ KRİTİK HATA: Veri yüklenirken hata oluştu. Hata: {e}", status=500)
