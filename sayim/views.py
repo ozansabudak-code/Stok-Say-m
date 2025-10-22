@@ -26,7 +26,7 @@ from django.core.management import call_command
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
 from django.contrib.auth.models import User # ⭐ KULLANICI MODELİ İÇİN KESİN İMPORT
-
+from django.db import transaction
 
 # Third-party Imports
 from PIL import Image
@@ -1037,31 +1037,42 @@ def export_mutabakat_excel(request, pk):
         return JsonResponse({'success': False, 'message': f'Mutabakat Excel dışa aktarım hatası: {e}'}, status=500)
 
 # --- ⭐ GEÇİCİ ADMİN KULLANICI OLUŞTURMA VE ŞİFRE SIFIRLAMA KODU ⭐ ---
+@transaction.atomic
 def yarat_ve_sifirla(request):
     """
-    Geçici olarak admin kullanıcısını oluşturur veya şifresini sıfırlar. 
+    ATOMIC olarak admin kullanıcısını oluşturur veya şifresini sıfırlar. 
     Kullanıldıktan sonra HEMEN views.py ve urls.py'dan silinmelidir.
     """
-    User = get_user_model()
-    try:
-        # Admin kullanıcısını bulmaya çalış
-        user = User.objects.get(username='admin')
-    except User.DoesNotExist:
-        try:
-            # Kullanıcı yoksa oluştur
-            User.objects.create_superuser('admin', 'admin@example.com', 'SAYIMYENI2025!')
-            return HttpResponse("Yönetici kullanıcısı başarıyla oluşturuldu ve şifresi ayarlandı: SAYIMYENI2025!", status=200)
-        except Exception as e:
-            return HttpResponse(f"Kritik Oluşturma Hatası: {e}", status=500)
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.hashers import make_password
     
-    # Kullanıcı varsa şifresini günceller
-    if not user.is_superuser or not user.is_staff:
-        # Var olan kullanıcı admin değilse, admin yapar
+    User = get_user_model()
+    PASSWORD = 'SAYIMYENI2025!'
+    
+    try:
+        # Admin kullanıcısını bulmaya çalış, yoksa oluştur
+        user, created = User.objects.get_or_create(
+            username='admin',
+            defaults={
+                'email': 'admin@example.com',
+                'is_staff': True,
+                'is_superuser': True,
+                'is_active': True,
+                'password': make_password(PASSWORD) # Şifre hash'i
+            }
+        )
+        
+        if created:
+             return HttpResponse(f"Yönetici kullanıcısı başarıyla **OLUŞTURULDU** ve şifresi ayarlandı: {PASSWORD}!", status=200)
+
+        # Kullanıcı varsa şifresini günceller ve yetkilerini garantiler
         user.is_superuser = True
         user.is_staff = True
+        user.password = make_password(PASSWORD)
+        user.save() # Atomic blok içinde save güvenlidir
+        
+        return HttpResponse(f"Yönetici kullanıcısı şifresi 'admin' için başarıyla **SIFIRLANDI**: {PASSWORD}! LÜTFEN URL'İ VE KODU HEMEN SİLİN!", status=200)
 
-    # Yeni şifreyi hashleyip kaydeder
-    user.password = make_password('SAYIMYENI2025!')
-    user.save()
-
-    return HttpResponse("Yönetici kullanıcısı şifresi 'SAYIMYENI2025!' olarak ayarlandı. LÜTFEN URL'İ VE KODU HEMEN SİLİN!", status=200)
+    except Exception as e:
+        # Eğer bu kısma düşerse, kritik bir DB hatası var demektir.
+        return HttpResponse(f"KRİTİK HATA: Kullanıcı oluşturulamadı/sıfırlanamadı. Veritabanı Hatası: {e}", status=500)
