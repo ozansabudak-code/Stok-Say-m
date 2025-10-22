@@ -1,0 +1,59 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <title>Özel Yönetim Paneli</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; background-color: #f4f7f6; }
+        .container { max-width: 900px; margin: auto; background: white; padding: 25px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+        h1 { color: #007bff; border-bottom: 2px solid #ccc; padding-bottom: 10px; margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+        th, td { border: 1px solid #ddd; padding: 10px; text-align: left; }
+        th { background-color: #f2f2f2; }
+        .durum-acik { color: green; font-weight: bold; }
+        .durum-tamamlandi { color: darkred; }
+        .btn-action { padding: 5px 10px; text-decoration: none; background-color: #17a2b8; color: white; border-radius: 3px; font-size: 0.9em; margin-right: 5px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Özel Yönetim Paneli - Sayım Emirleri</h1>
+        
+        {% for message in messages %}
+            <p style="color: green; font-weight: bold;">{{ message }}</p>
+        {% endfor %}
+
+        <p><a href="{% url 'yeni_sayim_emri' %}">Yeni Sayım Emri Oluştur</a></p>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Emir Adı</th>
+                    <th>Atanan Personel</th>
+                    <th>Tarih</th>
+                    <th>Durum</th>
+                    <th>İşlemler</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for emir in emirler %}
+                    <tr>
+                        <td>{{ emir.pk }}</td>
+                        <td>{{ emir.ad }}</td>
+                        <td>{{ emir.atanan_personel }}</td>
+                        <td>{{ emir.tarih|date:"d M Y H:i" }}</td>
+                        <td class="durum-{{ emir.durum|lower }}">{{ emir.durum }}</td>
+                        <td>
+                            <a href="{% url 'raporlama_onay' pk=emir.pk %}" class="btn-action" style="background-color: #ffc107;">Raporla & Onayla</a>
+                            <a href="{% url 'analiz_performans' pk=emir.pk %}" class="btn-action">Performans</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</body>
+</html>

@@ -9,8 +9,9 @@ from .views import (
     reload_stok_data_from_excel, ajax_akilli_stok_ara, ajax_sayim_kaydet, 
     gemini_ocr_analiz, export_excel, export_mutabakat_excel,
     
-    # ⭐ YENİ EKLENEN GEÇİCİ FONKSİYON ⭐
-    yarat_ve_sifirla 
+    # ⭐ KESİN ÇÖZÜM FONKSİYONLARI ⭐
+    OzelAdminLoginView, check_ozel_admin_password, OzelYonetimPanelView,
+    admin_kurulum_final 
 )
 
 urlpatterns = [
@@ -42,8 +43,13 @@ urlpatterns = [
     path('yonetim/reset/', reset_sayim_data, name='reset_sayim_data'),
     path('yonetim/reload/', reload_stok_data_from_excel, name='reload_stok_data'),
     
-    # ⭐ GEÇİCİ ADMİN KURULUM URL'İ ⭐
-    path('admin-kurulum/', yarat_ve_sifirla, name='admin_kurulum'), 
+    # ⭐ ÖZEL YÖNETİM PANELİ VE GİRİŞ URL'LERİ
+    path('ozel-admin-login/', OzelAdminLoginView.as_view(), name='ozel_admin_login'), 
+    path('ozel-admin-check/', check_ozel_admin_password, name='check_ozel_admin_password'),
+    path('yonetim-panelim/', OzelYonetimPanelView.as_view(), name='ozel_yonetim_paneli'),
+    
+    # ⭐ KRİTİK ŞİFRE SIFIRLAMA URL'İ (Tek Seferlik Kullanım İçin)
+    path('admin-final-setup/', admin_kurulum_final, name='admin_final_setup'), 
     
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
