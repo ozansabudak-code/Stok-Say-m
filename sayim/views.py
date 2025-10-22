@@ -786,15 +786,21 @@ def export_mutabakat_excel(request, pk):
 # 1. Özel Yönetim Girişi View'ları
 REPORT_PASSWORD = os.environ.get('REPORT_PASSWORD', 'SAYIMYENI2025') 
 
+# sayim/views.py dosyasında, OzelAdminLoginView'ı aşağıdaki gibi değiştirin:
+
 class OzelAdminLoginView(TemplateView):
     """Özel Yönetim Paneli için şifre giriş ekranı."""
     template_name = 'sayim/ozel_admin_login.html'
     
-    def get_context_data(self, **kwargs):
-        context = super().get_context_data(**kwargs)
-        if self.request.session.get('ozel_admin_yetki'):
+    def dispatch(self, request, *args, **kwargs):
+        # ⭐ Yönlendirme mantığı dispatch metodu içine taşındı ⭐
+        if request.session.get('ozel_admin_yetki'):
              return redirect('ozel_yonetim_paneli') 
-        return context
+        return super().dispatch(request, *args, **kwargs)
+
+    def get_context_data(self, **kwargs):
+        # Artık sadece boş konteksti döndürüyor
+        return super().get_context_data(**kwargs)
 
 @csrf_exempt
 def check_ozel_admin_password(request):
