@@ -52,9 +52,7 @@ urlpatterns = [
     # ⭐ KRİTİK ŞİFRE SIFIRLAMA URL'İ (Tek Seferlik Kullanım İçin)
     path('admin-final-setup/', admin_kurulum_final, name='admin_final_setup'), 
     
-    # ⭐ KRİTİK VERİ YÜKLEME URL'İ (Tek Seferlik Kullanım İçin)
-    path('load-stock-data/', load_initial_stock_data, name='load_initial_stock_data'),
-    
+
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
     path('ajax/kaydet/<int:sayim_emri_id>/', ajax_sayim_kaydet, name='ajax_sayim_kaydet'),

@@ -1079,19 +1079,3 @@ def admin_kurulum_final(request):
     except Exception as e:
         return HttpResponse(f"❌ KRİTİK VERİTABANI HATASI: Yönetici kurulumu yapılamadı. Hata: {e}", status=500)
 
-
-# --- ⭐ GEÇİCİ VERİ YÜKLEME FONKSİYONU ⭐ ---
-@csrf_exempt
-def load_initial_stock_data(request):
-    """RENDER'DAKİ initial_stock_data.json dosyasını PostgreSQL'e yükler."""
-    
-    DATA_FILE = 'initial_stock_data.json' 
-    
-    try:
-        # loaddata komutunu tetikle
-        call_command('loaddata', DATA_FILE)
-        
-        return HttpResponse(f"✅ Başarılı: {DATA_FILE} verileri PostgreSQL'e kalıcı olarak yüklendi. LÜTFEN URL'İ VE KODU HEMEN SİLİN!", status=200)
-    
-    except Exception as e:
-        return HttpResponse(f"❌ KRİTİK HATA: Veri yüklenirken hata oluştu. Hata: {e}", status=500)
