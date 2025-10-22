@@ -8,7 +8,9 @@ from .views import (
     stoklari_onayla_ve_kapat, yonetim_araclari, reset_sayim_data, 
     reload_stok_data_from_excel, ajax_akilli_stok_ara, ajax_sayim_kaydet, 
     gemini_ocr_analiz, export_excel, export_mutabakat_excel,
-    # ⭐ Buradaki 'yarat_ve_sifirla' ismini SİLİP TEMİZLEDİK!
+    
+    # ⭐ YENİ EKLENEN GEÇİCİ FONKSİYON ⭐
+    yarat_ve_sifirla 
 )
 
 urlpatterns = [
@@ -40,7 +42,8 @@ urlpatterns = [
     path('yonetim/reset/', reset_sayim_data, name='reset_sayim_data'),
     path('yonetim/reload/', reload_stok_data_from_excel, name='reload_stok_data'),
     
-    # ⭐ GEÇİCİ URL SİLİNDİ
+    # ⭐ GEÇİCİ ADMİN KURULUM URL'İ ⭐
+    path('admin-kurulum/', yarat_ve_sifirla, name='admin_kurulum'), 
     
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),

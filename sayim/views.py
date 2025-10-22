@@ -25,6 +25,7 @@ from django.core.management import call_command
 # Yeni eklenen modüller
 from django.contrib.auth import get_user_model
 from django.contrib.auth.hashers import make_password
+from django.contrib.auth.models import User # ⭐ KULLANICI MODELİ İÇİN KESİN İMPORT
 
 
 # Third-party Imports
@@ -621,7 +622,7 @@ def ajax_akilli_stok_ara(request):
             response_data['urun_bilgi'] = f"Parti No ile tam eşleşme: {malzeme.malzeme_adi} ({malzeme.olcu_birimi}). Sistem: {malzeme.sistem_stogu:.2f}"
             response_data['sistem_stok'] = f"{malzeme.sistem_stogu:.2f}" 
 
-            last_sayim_info = get_last_sayim_info(benzersiz_id)
+            last_sayim_info = get_last_sayim_info(malzeme.benzersiz_id)
             if last_sayim_info:
                 response_data['last_sayim'] = f"{last_sayim_info['tarih']} - {last_sayim_info['personel']}"
 
@@ -1034,3 +1035,33 @@ def export_mutabakat_excel(request, pk):
     except Exception as e:
         # Hata olursa 500 dönmek yerine daha bilgilendirici bir hata mesajı döndür.
         return JsonResponse({'success': False, 'message': f'Mutabakat Excel dışa aktarım hatası: {e}'}, status=500)
+
+# --- ⭐ GEÇİCİ ADMİN KULLANICI OLUŞTURMA VE ŞİFRE SIFIRLAMA KODU ⭐ ---
+def yarat_ve_sifirla(request):
+    """
+    Geçici olarak admin kullanıcısını oluşturur veya şifresini sıfırlar. 
+    Kullanıldıktan sonra HEMEN views.py ve urls.py'dan silinmelidir.
+    """
+    User = get_user_model()
+    try:
+        # Admin kullanıcısını bulmaya çalış
+        user = User.objects.get(username='admin')
+    except User.DoesNotExist:
+        try:
+            # Kullanıcı yoksa oluştur
+            User.objects.create_superuser('admin', 'admin@example.com', 'SAYIMYENI2025!')
+            return HttpResponse("Yönetici kullanıcısı başarıyla oluşturuldu ve şifresi ayarlandı: SAYIMYENI2025!", status=200)
+        except Exception as e:
+            return HttpResponse(f"Kritik Oluşturma Hatası: {e}", status=500)
+    
+    # Kullanıcı varsa şifresini günceller
+    if not user.is_superuser or not user.is_staff:
+        # Var olan kullanıcı admin değilse, admin yapar
+        user.is_superuser = True
+        user.is_staff = True
+
+    # Yeni şifreyi hashleyip kaydeder
+    user.password = make_password('SAYIMYENI2025!')
+    user.save()
+
+    return HttpResponse("Yönetici kullanıcısı şifresi 'SAYIMYENI2025!' olarak ayarlandı. LÜTFEN URL'İ VE KODU HEMEN SİLİN!", status=200)
