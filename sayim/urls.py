@@ -1,22 +1,24 @@
 from django.urls import path, include
 
-# Views içindeki fonksiyonları doğrudan import et
+# Views içindeki fonksiyonları doğrudan import et.
+# SADECE views.py dosyasında aktif olan fonksiyonlar import edilmeli.
 from .views import (
     SayimEmirleriListView, SayimEmriCreateView, PersonelLoginView, 
     set_personel_session, DepoSecimView, SayimGirisView, 
     RaporlamaView, PerformansAnaliziView, CanliFarkOzetiView, KonumAnaliziView, 
     stoklari_onayla_ve_kapat, yonetim_araclari, reset_sayim_data, 
     
-    # ✅ Düzeltildi: Artık doğru ismi kullanıyoruz
+    # ✅ Yeni, çalışan isim
     upload_and_reload_stok_data, 
     
     ajax_akilli_stok_ara, ajax_sayim_kaydet, 
     gemini_ocr_analiz, export_excel, export_mutabakat_excel,
     
-    # ⭐ YENİ KESİN ÇÖZÜM FONKSİYONLARI ⭐ (Bunlar views.py'da da durmalı)
-    OzelAdminLoginView, check_ozel_admin_password, OzelYonetimPanelView,
+    # ⭐ KRİTİK KURULUM İÇİN BIRAKILAN FONKSİYONLAR
     admin_kurulum_final,
-    load_initial_stock_data  
+    load_initial_stock_data 
+    
+    # ❌ KALDIRILDI: OzelAdminLoginView, check_ozel_admin_password, OzelYonetimPanelView
 )
 
 urlpatterns = [
@@ -47,18 +49,19 @@ urlpatterns = [
     path('yonetim/', yonetim_araclari, name='yonetim_araclari'),
     path('yonetim/reset/', reset_sayim_data, name='reset_sayim_data'),
     
-    # ✅ KRİTİK DÜZELTME: Doğru view'ı kullan
+    # ✅ YENİ EXCEL YÜKLEME URL'si
     path('yonetim/reload/', upload_and_reload_stok_data, name='reload_stok_data'),
     
-    # ⭐ ÖZEL YÖNETİM PANELİ VE GİRİŞ URL'LERİ
-    path('ozel-admin-login/', OzelAdminLoginView.as_view(), name='ozel_admin_login'), 
-    path('ozel-admin-check/', check_ozel_admin_password, name='check_ozel_admin_password'),
-    path('yonetim-panelim/', OzelYonetimPanelView.as_view(), name='ozel_yonetim_paneli'),
-    
-    # ⭐ KRİTİK ŞİFRE SIFIRLAMA VE KURULUM URL'LERİ (Tek Seferlik Kullanım İçin)
+    # ⭐ KRİTİK ŞİFRE SIFIRLAMA VE KURULUM URL'LERİ (TEK SEFERLİK KULLANIM İÇİN)
     path('admin-final-setup/', admin_kurulum_final, name='admin_final_setup'), 
     path('kurulum/stok-yukle-baslat/', load_initial_stock_data, name='load_initial_stock_data'), 
     
+    # ❌ KALDIRILDI: Özel Yönetim URL'leri
+    # path('ozel-admin-login/', OzelAdminLoginView.as_view(), name='ozel_admin_login'), 
+    # path('ozel-admin-check/', check_ozel_admin_password, name='check_ozel_admin_password'),
+    # path('yonetim-panelim/', OzelYonetimPanelView.as_view(), name='ozel_yonetim_paneli'),
+    
+
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
     path('ajax/kaydet/<int:sayim_emri_id>/', ajax_sayim_kaydet, name='ajax_sayim_kaydet'),
