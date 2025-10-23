@@ -1,6 +1,6 @@
 from django.urls import path, include
 
-# Views içindeki fonksiyonları doğrudan import et (Hata çözüm metodu)
+# Views içindeki fonksiyonları doğrudan import et
 from .views import (
     SayimEmirleriListView, SayimEmriCreateView, PersonelLoginView, 
     set_personel_session, DepoSecimView, SayimGirisView, 
@@ -12,7 +12,7 @@ from .views import (
     # ⭐ YENİ KESİN ÇÖZÜM FONKSİYONLARI ⭐
     OzelAdminLoginView, check_ozel_admin_password, OzelYonetimPanelView,
     admin_kurulum_final,
-    load_initial_stock_data 
+    load_initial_stock_data  # <-- Bu fonksiyon import edilmişti.
 )
 
 urlpatterns = [
@@ -49,8 +49,10 @@ urlpatterns = [
     path('ozel-admin-check/', check_ozel_admin_password, name='check_ozel_admin_password'),
     path('yonetim-panelim/', OzelYonetimPanelView.as_view(), name='ozel_yonetim_paneli'),
     
-    # ⭐ KRİTİK ŞİFRE SIFIRLAMA URL'İ (Tek Seferlik Kullanım İçin)
+    # ⭐ KRİTİK ŞİFRE SIFIRLAMA VE KURULUM URL'LERİ (Tek Seferlik Kullanım İçin)
     path('admin-final-setup/', admin_kurulum_final, name='admin_final_setup'), 
+    # Yeni eklenen: Import edilen stok yükleme fonksiyonuna URL ataması
+    path('kurulum/stok-yukle-baslat/', load_initial_stock_data, name='load_initial_stock_data'), 
     
 
     # AJAX ENDPOINT'LERİ
