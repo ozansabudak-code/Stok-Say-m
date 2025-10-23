@@ -6,13 +6,17 @@ from .views import (
     set_personel_session, DepoSecimView, SayimGirisView, 
     RaporlamaView, PerformansAnaliziView, CanliFarkOzetiView, KonumAnaliziView, 
     stoklari_onayla_ve_kapat, yonetim_araclari, reset_sayim_data, 
-    reload_stok_data_from_excel, ajax_akilli_stok_ara, ajax_sayim_kaydet, 
+    
+    # ✅ Düzeltildi: Artık doğru ismi kullanıyoruz
+    upload_and_reload_stok_data, 
+    
+    ajax_akilli_stok_ara, ajax_sayim_kaydet, 
     gemini_ocr_analiz, export_excel, export_mutabakat_excel,
     
-    # ⭐ YENİ KESİN ÇÖZÜM FONKSİYONLARI ⭐
+    # ⭐ YENİ KESİN ÇÖZÜM FONKSİYONLARI ⭐ (Bunlar views.py'da da durmalı)
     OzelAdminLoginView, check_ozel_admin_password, OzelYonetimPanelView,
     admin_kurulum_final,
-    load_initial_stock_data  # <-- Bu fonksiyon import edilmişti.
+    load_initial_stock_data  
 )
 
 urlpatterns = [
@@ -42,7 +46,9 @@ urlpatterns = [
     # 5. YÖNETİM VE AJAX
     path('yonetim/', yonetim_araclari, name='yonetim_araclari'),
     path('yonetim/reset/', reset_sayim_data, name='reset_sayim_data'),
-    path('yonetim/reload/', reload_stok_data_from_excel, name='reload_stok_data'),
+    
+    # ✅ KRİTİK DÜZELTME: Doğru view'ı kullan
+    path('yonetim/reload/', upload_and_reload_stok_data, name='reload_stok_data'),
     
     # ⭐ ÖZEL YÖNETİM PANELİ VE GİRİŞ URL'LERİ
     path('ozel-admin-login/', OzelAdminLoginView.as_view(), name='ozel_admin_login'), 
@@ -51,10 +57,8 @@ urlpatterns = [
     
     # ⭐ KRİTİK ŞİFRE SIFIRLAMA VE KURULUM URL'LERİ (Tek Seferlik Kullanım İçin)
     path('admin-final-setup/', admin_kurulum_final, name='admin_final_setup'), 
-    # Yeni eklenen: Import edilen stok yükleme fonksiyonuna URL ataması
     path('kurulum/stok-yukle-baslat/', load_initial_stock_data, name='load_initial_stock_data'), 
     
-
     # AJAX ENDPOINT'LERİ
     path('ajax/stok-ara-akilli/', ajax_akilli_stok_ara, name='ajax_akilli_stok_ara'),
     path('ajax/kaydet/<int:sayim_emri_id>/', ajax_sayim_kaydet, name='ajax_sayim_kaydet'),
