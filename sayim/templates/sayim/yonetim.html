@@ -16,6 +16,8 @@
         .mesaj { margin-top: 15px; padding: 10px; border-radius: 4px; display: none; }
         .mesaj-success { background-color: #d4edda; color: #155724; }
         .mesaj-error { background-color: #f8d7da; color: #721c24; }
+        /* Yeni stil: Dosya seç alanını hizalamak için */
+        .file-input { width: 100%; padding: 10px 0; margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -26,8 +28,10 @@
 
         <div class="islem-kutusu">
             <h2>1. Stok Verilerini Yeniden Yükle/Güncelle</h2>
-            <p>Mevcut Malzeme listesini siler/günceller. **Dosya yolu, komutu çalıştırdığınız bilgisayardaki Excel dosyasının tam yolu olmalıdır.**</p>
-            <input type="text" id="excel-path" placeholder="Örn: C:\Users\ozan\Masaüstü\stok_listesi.xlsx" style="width: 100%; padding: 10px;">
+            <p>Mevcut Malzeme listesini siler/günceller. **Lütfen bilgisayarınızdaki Excel dosyasını seçin.**</p>
+            
+            <input type="file" id="excel-file" accept=".xlsx, .xls, .csv" required class="file-input">
+            
             <button id="reload-btn" class="btn-action btn-success">EXCEL'DEN YÜKLEMEYİ BAŞLAT</button>
             <div id="reload-message" class="mesaj"></div>
         </div>
@@ -56,7 +60,7 @@
         }
     }
 
-    // 1. Sayım Verisi Sıfırlama
+    // 1. Sayım Verisi Sıfırlama (Aynı Kaldı)
     document.getElementById('reset-btn').addEventListener('click', () => {
         if (!confirm('UYARI: Bu işlem geri alınamaz! Tüm sayım emirleri ve detayları silinecektir. Emin misiniz?')) {
             return;
@@ -71,22 +75,28 @@
         .catch(error => handleResponse({ success: false, message: 'Sunucu bağlantı hatası.' }, 'reset-message'));
     });
 
-    // 2. Stok Verisi Yeniden Yükleme
+    // 2. Stok Verisi Yeniden Yükleme (DEĞİŞTİ)
     document.getElementById('reload-btn').addEventListener('click', () => {
-        const path = document.getElementById('excel-path').value;
+        const fileInput = document.getElementById('excel-file');
+        const file = fileInput.files[0]; // Seçilen dosyayı al
 
-        if (!path) {
-            alert('Lütfen Excel dosya yolunu girin.');
+        if (!file) {
+            alert('Lütfen yüklenecek Excel dosyasını seçin.');
             return;
         }
-        
+
+        // FormData kullanarak dosyayı sunucuya gönder
+        const formData = new FormData();
+        formData.append('excel_file', file); // 'excel_file' adıyla dosyayı ekle
+
+        // Yükleme mesajını sıfırla
+        document.getElementById('reload-message').style.display = 'none';
+
         fetch('{% url "reload_stok_data" %}', {
             method: 'POST',
-            headers: { 
-                'Content-Type': 'application/x-www-form-urlencoded',
-                'X-CSRFToken': CSRF_TOKEN 
-            },
-            body: `file_path=${encodeURIComponent(path)}`
+            // Content-Type başlığını FormData kullandığımızda AYARLAMIYORUZ, tarayıcı otomatik ayarlar.
+            headers: { 'X-CSRFToken': CSRF_TOKEN },
+            body: formData // Dosyayı gönder
         })
         .then(res => res.json())
         .then(data => handleResponse(data, 'reload-message'))
